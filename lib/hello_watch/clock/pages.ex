@@ -1,94 +1,108 @@
 defmodule HelloWatch.Clock.Pages do
-  @moduledoc false
-  alias HelloWatch.Clock.{Font, Raster}
+  @moduledoc """
+  The pages beside the face, each in its own colour: a title between two
+  sparkles, a body, and a row of little moons for page dots with the current
+  page's full. `render/3` lays out rows of text; `page/3` takes any body.
+  """
+  use Emerge.UI
+
+  alias HelloWatch.Clock.{Moon, Palette}
 
   @size 454
-  @background {5, 12, 18}
-  @white {224, 234, 242}
-  @muted {105, 130, 145}
-  @accent {64, 210, 190}
+  @pages 5
+  # Page 0 is the face, which paints its own sky.
+  @colors {:night, :deep, :ley, :plum, :wine}
 
-  # The panel is round: at the title's row the visible span is only about
-  # x 87..366, and the body rows reach the edge near x 49, so the title is
-  # centred and the body is inset past the curve.
-  @title_y 48
-  @title_scale 3
-  @body_x 60
+  # The panel is round, so the body starts past the title and is inset from
+  # the left curve; rows narrow near the top and bottom.
+  @body_top 112
+  @body_left 70
+  @label_width 104
+  @max_rows 11
 
-  # The circular fill never changes, so it is computed once at compile time
-  # rather than rebuilt on every render; only the sparse text/dots overlay
-  # below is computed per frame and patched onto a copy of this.
-  @base_frame (fn ->
-                 center = div(@size, 2)
-                 {r, g, b} = @background
-                 fill = <<b, g, r>>
-                 black = <<0, 0, 0>>
+  @doc """
+  A page of `rows`: `{label, value}` pairs, plain strings, or `""` for a
+  gap.
+  """
+  def render(title, rows, page) do
+    body =
+      column(
+        [padding_each(@body_top, 0, 0, @body_left), spacing(5)],
+        rows |> Enum.take(@max_rows) |> Enum.map(&row_element/1)
+      )
 
-                 for y <- 0..(@size - 1), x <- 0..(@size - 1), into: <<>> do
-                   if (x - center) * (x - center) + (y - center) * (y - center) <=
-                        center * center,
-                      do: fill,
-                      else: black
-                 end
-               end).()
-
-  def render(title, lines, page) do
-    pixels = text(%{}, centered_x(title, @title_scale), @title_y, title, @title_scale, @accent)
-
-    pixels =
-      lines
-      |> Enum.take(15)
-      |> Enum.with_index()
-      |> Enum.reduce(pixels, fn {line, index}, acc ->
-        text(acc, @body_x, 94 + index * 20, String.slice(to_string(line), 0, 28), 2, @white)
-      end)
-      |> page_dots(page)
-
-    Raster.patch(@base_frame, pixels)
+    page(title, body, page)
   end
 
-  # Glyphs are 5 columns wide on a 6-column advance.
-  defp centered_x(value, scale) do
-    width = String.length(to_string(value)) * 6 * scale - scale
-    div(@size - width, 2)
+  @doc "A page with `body` laid over the whole 454x454 panel."
+  def page(title, body, page) do
+    el(
+      [
+        width(px(@size)),
+        height(px(@size)),
+        Background.color(Palette.c(elem(@colors, page))),
+        Nearby.in_front(title(title)),
+        Nearby.in_front(body),
+        Nearby.in_front(moons(page))
+      ],
+      none()
+    )
   end
 
-  defp text(pixels, x, y, value, scale, color) do
-    value
-    |> to_string()
-    |> String.upcase()
-    |> String.to_charlist()
-    |> Enum.with_index()
-    |> Enum.reduce(pixels, fn {char, index}, acc ->
-      glyph(acc, x + index * 6 * scale, y, Font.glyph(char), scale, color)
-    end)
+  defp title(title) do
+    el(
+      [width(px(@size)), padding_each(44, 0, 0, 0)],
+      row([center_x(), spacing(12)], [
+        Moon.sparkle(12, :lilac, [center_y()], 8),
+        el(
+          [Font.family("Macondo"), Font.size(34), Font.color(Palette.c(:candle))],
+          text(title)
+        ),
+        Moon.sparkle(12, :lilac, [center_y()], -8)
+      ])
+    )
   end
 
-  defp glyph(pixels, x, y, rows, scale, color) do
-    rows
-    |> Enum.with_index()
-    |> Enum.reduce(pixels, fn {bits, row}, acc ->
-      for col <- 0..4,
-          Bitwise.band(bits, Bitwise.bsl(1, 4 - col)) != 0,
-          py <- 0..(scale - 1),
-          px <- 0..(scale - 1),
-          reduce: acc do
-        map -> Map.put(map, (y + row * scale + py) * @size + x + col * scale + px, color)
-      end
-    end)
+  defp row_element(""), do: el([height(px(8))], none())
+
+  defp row_element({label, value}) do
+    row([spacing(8)], [
+      el(
+        [
+          width(px(@label_width)),
+          center_y(),
+          Font.family("Alegreya Sans"),
+          Font.italic(),
+          Font.size(17),
+          Font.color(Palette.c(:lilac))
+        ],
+        text(label)
+      ),
+      el(
+        [Font.family("Alegreya Sans"), Font.size(20), Font.color(Palette.c(:bone))],
+        text(String.slice(to_string(value), 0, 22))
+      )
+    ])
   end
 
-  defp page_dots(pixels, selected) do
-    Enum.reduce(0..2, pixels, fn index, acc ->
-      color = if index == selected, do: @accent, else: @muted
-      cx = 211 + index * 16
+  defp row_element(line) do
+    el(
+      [Font.family("Alegreya Sans"), Font.size(19), Font.color(Palette.c(:bone))],
+      text(String.slice(to_string(line), 0, 30))
+    )
+  end
 
-      for y <- 420..425, x <- (cx - 3)..(cx + 3), reduce: acc do
-        map ->
-          if (x - cx) * (x - cx) + (y - 422) * (y - 422) <= 10,
-            do: Map.put(map, y * @size + x, color),
-            else: map
-      end
-    end)
+  defp moons(selected) do
+    el(
+      [width(px(@size)), padding_each(400, 0, 0, 0)],
+      row(
+        [center_x(), spacing(10)],
+        for index <- 0..(@pages - 1) do
+          if index == selected,
+            do: Moon.disc(0.5, 14, attrs: [center_y(), Border.glow(Palette.c(:lilac, 0.5), 4)]),
+            else: Moon.disc(0.13, 11, lit: :dusk, attrs: [center_y()])
+        end
+      )
+    )
   end
 end

@@ -35,7 +35,26 @@ defmodule HelloWatch.Application do
     defp target_children() do
       [
         HelloWatch.GPS,
-        {HelloWatch.Clock, Application.get_env(:hello_watch, HelloWatch.Clock, [])},
+        HelloWatch.Vibrator,
+        HelloWatch.Nanohub.Guard,
+        HelloWatch.Suspend,
+        HelloWatch.Tailscale,
+        %{
+          id: HelloWatch.UI,
+          type: :supervisor,
+          start: {Supervisor, :start_link, [ui_children(), [strategy: :rest_for_one]]}
+        }
+      ]
+    end
+
+    # The viewport sends its frames to the Display process it finds at mount,
+    # so a Display restart has to restart the viewport too.
+    defp ui_children() do
+      clock = Application.get_env(:hello_watch, HelloWatch.Clock, [])
+
+      [
+        HelloWatch.Clock.Display,
+        {HelloWatch.Clock, [name: HelloWatch.Clock] ++ clock},
         {HelloWatch.Clock.Button, target: HelloWatch.Clock},
         {HelloWatch.Clock.Touch, target: HelloWatch.Clock}
       ]

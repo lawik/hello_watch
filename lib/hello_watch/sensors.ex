@@ -25,6 +25,7 @@ defmodule HelloWatch.Sensors do
     if File.exists?(@nanohubctl) do
       {:ok,
        Port.open({:spawn_executable, @nanohubctl}, [
+         :binary,
          :exit_status,
          :stderr_to_stdout,
          {:line, 4096},

@@ -1,154 +1,211 @@
 defmodule HelloWatch.Clock.Face do
-  @moduledoc "Software-rendered round analog face for the watch's RGB888 framebuffer."
-  alias HelloWatch.Clock.Raster
+  @moduledoc """
+  The witch's clock: a night sky with the twelve phases of the moon for
+  hours, tonight's real moon glowing among them, the day by its old name, a
+  star-tipped wand for the minute hand, and the battery's charge faint
+  behind the hands.
+
+  Hands and markers are full-face layers rotated about the centre: a piece
+  placed at twelve o'clock in a 454x454 box, turned by `Transform.rotate/1`.
+  """
+  use Emerge.UI
+
+  alias HelloWatch.Clock.{Moon, Palette}
 
   @size 454
-  @center 227
-  @white {224, 234, 242}
-  @accent {64, 210, 190}
-  @low {236, 96, 96}
+  @center div(@size, 2)
+  @marker_radius 188
+  @battery_low 20
 
-  # Charge indicator, drawn below the centre so the hands sweep over it the way
-  # they would over a printed subdial.
-  @battery_y 330
-  @battery_width 46
-  @battery_height 20
-  @battery_low 15
+  # A few fixed stars, {x, y, size, alpha}: scattered, clear of the hands'
+  # hub and the flask.
+  @stars [
+    {96, 168, 3, 0.7},
+    {132, 118, 2, 0.5},
+    {318, 112, 3, 0.6},
+    {360, 170, 2, 0.5},
+    {104, 262, 2, 0.45},
+    {352, 286, 3, 0.55},
+    {150, 356, 2, 0.4},
+    {300, 362, 2, 0.45},
+    {200, 84, 2, 0.5},
+    {270, 196, 2, 0.35}
+  ]
+  @sparkles [{116, 214, 13, 10}, {338, 236, 10, -12}, {262, 82, 9, 20}]
 
-  # Small "N" mark above centre, same idea as the charge indicator: it sits
-  # in the hands' sweep and is drawn once into the cached background rather
-  # than every tick.
-  @logo_top 118
-  @logo_bottom 142
-  @logo_left 217
-  @logo_right 237
+  @days {"Moon's day", "Tiw's day", "Woden's day", "Thor's day", "Frigg's day", "Saturn's day",
+         "Sun's day"}
 
-  @doc "An encoded frame with the tick marks and logo, cached once by the caller."
-  def background, do: Raster.patch(Raster.solid(@size, {0, 0, 0}), tick_marks() |> nerves_mark())
+  @doc """
+  `time` is local, `moon` the real moon's phase (`Moon.phase/1`), and
+  `battery` `%{percent: 0..100, status: :battery | :charging | :full}`, or
+  `nil` when the watch can't tell.
 
-  defp tick_marks do
-    Enum.reduce(0..59, %{}, fn tick, pixels ->
-      major = rem(tick, 5) == 0
+  There's no second hand: the minute hand sits on the minute, and the face
+  redraws once a minute.
+  """
+  def render(time, moon, battery) do
+    hours = rem(time.hour, 12) + time.minute / 60
 
-      line(
-        pixels,
-        point(tick / 60, if(major, do: 185, else: 197)),
-        point(tick / 60, 205),
-        if(major, do: 3, else: 1),
-        if(major, do: @white, else: {65, 80, 92})
-      )
-    end)
+    layers =
+      [charge(battery)] ++
+        stars() ++
+        markers(moon) ++
+        [
+          day(time),
+          hand(hours / 12, 9, 14, 104, :bone, tip(:lilac, 9)),
+          hand(time.minute / 60, 5, 20, 156, :bone, Moon.sparkle(18, :bone)),
+          hub()
+        ]
+
+    el(
+      [
+        width(px(@size)),
+        height(px(@size)),
+        Background.color(Palette.gradient([:night, :midnight], 180))
+      ] ++ Enum.map(layers, &Nearby.in_front/1),
+      none()
+    )
   end
 
-  defp nerves_mark(pixels) do
-    pixels
-    |> line({@logo_left, @logo_top}, {@logo_left, @logo_bottom}, 1.5, @accent)
-    |> line({@logo_right, @logo_top}, {@logo_right, @logo_bottom}, 1.5, @accent)
-    |> line({@logo_left, @logo_top}, {@logo_right, @logo_bottom}, 1.5, @accent)
+  defp stars do
+    dots =
+      for {x, y, size, alpha} <- @stars do
+        place(
+          el(
+            [
+              width(px(size)),
+              height(px(size)),
+              Border.rounded(size / 2),
+              Background.color(Palette.c(:bone, alpha))
+            ],
+            none()
+          ),
+          x,
+          y,
+          size
+        )
+      end
+
+    sparkles =
+      for {x, y, size, tilt} <- @sparkles,
+          do: place(Moon.sparkle(size, :lilac, [], tilt), x, y, size)
+
+    dots ++ sparkles
   end
 
-  # The hands and battery indicator sweep across the whole face, including
-  # over the tick marks and logo baked into `background`, so every stroke
-  # below blends against that frame's real pixels rather than assuming
-  # black - only the small region each stroke actually touches is looked
-  # up, so this stays cheap despite not re-encoding all size*size pixels.
-  def render(time, background \\ background(), battery \\ nil) do
-    seconds = time.second
-    minutes = time.minute + seconds / 60
-    hours = rem(time.hour, 12) + minutes / 60
+  # The twelve phases around the dial, full at twelve and new at six; the
+  # one closest to the real moon is bigger and glows like a candle.
+  defp markers(moon) do
+    tonight = rem(round(moon * 12) + 6, 12)
 
-    overlay =
-      %{}
-      |> battery(battery, background)
-      |> line(point(hours / 12, -16), point(hours / 12, 112), 6, @white, background)
-      |> line(point(minutes / 60, -22), point(minutes / 60, 163), 4, @white, background)
-      |> line(point(seconds / 60, -32), point(seconds / 60, 177), 1.5, @accent, background)
-      |> line({@center, @center}, {@center, @center}, 7, @accent, background)
+    minute_dots =
+      for minute <- 0..59, rem(minute, 5) != 0 do
+        on_radius(minute / 60, @marker_radius + 12, 2, el(dot_attrs(2, :dusk), none()))
+      end
 
-    Raster.patch(background, overlay)
+    moons =
+      for hour <- 0..11 do
+        phase = rem(hour + 6, 12) / 12
+
+        {size, attrs} =
+          if hour == tonight,
+            do: {30, [Border.glow(Palette.c(:candle, 0.55), 6)]},
+            else: {20, []}
+
+        on_radius(hour / 12, @marker_radius, size, Moon.disc(phase, size, attrs: attrs))
+      end
+
+    minute_dots ++ moons
   end
 
-  def black, do: Raster.solid(@size, {0, 0, 0})
+  defp dot_attrs(size, color),
+    do: [
+      width(px(size)),
+      height(px(size)),
+      Border.rounded(size / 2),
+      Background.color(Palette.c(color))
+    ]
 
-  @doc "Scales an encoded RGB888 frame toward black; fraction 0 is unchanged, 1 is black."
-  def fade(frame, fraction) when fraction <= 0, do: frame
-  def fade(frame, fraction) when fraction >= 1, do: :binary.copy(<<0>>, byte_size(frame))
-
-  def fade(frame, fraction) do
-    scale = 1 - fraction
-    for <<byte <- frame>>, into: <<>>, do: <<round(byte * scale)>>
-  end
-
-  defp battery(pixels, nil, _background), do: pixels
-
-  defp battery(pixels, percent, background) when is_number(percent) do
-    level = percent |> max(0) |> min(100)
-    left = @center - @battery_width / 2
-    right = @center + @battery_width / 2
-    top = @battery_y - @battery_height / 2
-    bottom = @battery_y + @battery_height / 2
-
-    pixels
-    |> line({left, top}, {right, top}, 1, @white, background)
-    |> line({left, bottom}, {right, bottom}, 1, @white, background)
-    |> line({left, top}, {left, bottom}, 1, @white, background)
-    |> line({right, top}, {right, bottom}, 1, @white, background)
-    |> line({right + 3, @battery_y - 4}, {right + 3, @battery_y + 4}, 2, @white, background)
-    |> charge(left, right, level, background)
-  end
-
-  defp charge(pixels, left, right, level, background) do
-    span = right - left - 8
-    width = span * level / 100
-
-    if width < 1 do
-      pixels
-    else
-      line(
-        pixels,
-        {left + 4, @battery_y},
-        {left + 4 + width, @battery_y},
-        5,
-        if(level <= @battery_low, do: @low, else: @accent),
-        background
-      )
-    end
-  end
-
-  defp point(turn, radius) do
+  # Places `child`, `size` px square, centred on the circle of `radius` at
+  # `turn` of the way round from twelve, kept upright.
+  defp on_radius(turn, radius, size, child) do
     angle = turn * 2 * :math.pi()
-    {@center + :math.sin(angle) * radius, @center - :math.cos(angle) * radius}
+    place(child, @center + radius * :math.sin(angle), @center - radius * :math.cos(angle), size)
   end
 
-  defp line(pixels, {ax, ay}, {bx, by}, radius, color, background \\ nil) do
-    dx = bx - ax
-    dy = by - ay
-    length_squared = max(dx * dx + dy * dy, 0.0001)
-
-    for y <- max(0, floor(min(ay, by) - radius))..min(@size - 1, ceil(max(ay, by) + radius)),
-        x <- max(0, floor(min(ax, bx) - radius))..min(@size - 1, ceil(max(ax, bx) + radius)),
-        reduce: pixels do
-      acc ->
-        t = min(1, max(0, ((x - ax) * dx + (y - ay) * dy) / length_squared))
-        distance = :math.sqrt(:math.pow(x - ax - t * dx, 2) + :math.pow(y - ay - t * dy, 2))
-        coverage = min(1, max(0, radius + 0.5 - distance))
-
-        if coverage > 0 do
-          index = y * @size + x
-          {r, g, b} = color
-          {br, bg, bb} = Map.get_lazy(acc, index, fn -> underlying(background, index) end)
-          blend = fn c, base -> round(c * coverage + base * (1 - coverage)) end
-          Map.put(acc, index, {blend.(r, br), blend.(g, bg), blend.(b, bb)})
-        else
-          acc
-        end
-    end
+  defp place(child, x, y, size) do
+    el(
+      [Transform.move_x(x - size / 2), Transform.move_y(y - size / 2)],
+      child
+    )
   end
 
-  defp underlying(nil, _index), do: {0, 0, 0}
+  defp day(%{year: _} = time) do
+    weekday = Date.day_of_week(time)
 
-  defp underlying(background, index) do
-    <<b, g, r>> = binary_part(background, index * 3, 3)
-    {r, g, b}
+    el(
+      [width(px(@size)), padding_each(118, 0, 0, 0)],
+      el(
+        [center_x(), Font.family("Macondo"), Font.size(20), Font.color(Palette.c(:lilac))],
+        text("#{elem(@days, weekday - 1)} · #{time.day}")
+      )
+    )
+  end
+
+  defp day(_time), do: none()
+
+  # `back` is how far the hand reaches past the centre; `tip` sits at its end.
+  defp hand(turn, thickness, back, length, color, tip) do
+    el(
+      [width(px(@size)), height(px(@size)), Transform.rotate(turn * 360)],
+      el(
+        [
+          width(px(thickness)),
+          height(px(length + back)),
+          Transform.move_x(@center - thickness / 2),
+          Transform.move_y(@center - length),
+          Background.color(Palette.c(color)),
+          Border.rounded(thickness / 2),
+          Nearby.above(el([center_x(), Transform.move_y(tip_offset(tip))], tip))
+        ],
+        none()
+      )
+    )
+  end
+
+  defp tip(color, size), do: el(dot_attrs(size, color), none())
+
+  # Tips overlap the hand's end by half their height.
+  defp tip_offset(_tip), do: 8
+
+  # A crescent moon at the hub, the hands' pivot.
+  defp hub do
+    place(
+      Moon.disc(0.2, 18,
+        lit: :candle,
+        dark: :night,
+        attrs: [Border.glow(Palette.c(:candle, 0.4), 3)]
+      ),
+      @center,
+      @center,
+      18
+    )
+  end
+
+  # The charge, large and faint behind the hands; the battery page has the
+  # details.
+  defp charge(nil), do: none()
+
+  defp charge(%{percent: percent}) do
+    color = if percent <= @battery_low, do: Palette.c(:rose, 0.22), else: Palette.c(:bone, 0.1)
+
+    el(
+      [width(px(@size)), padding_each(250, 0, 0, 0)],
+      el(
+        [center_x(), Font.family("Macondo"), Font.size(96), Font.color(color)],
+        text("#{percent}%")
+      )
+    )
   end
 end

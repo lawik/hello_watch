@@ -1,5 +1,13 @@
 defmodule HelloWatch.Clock.Touch do
-  @moduledoc "Reads horizontal swipe gestures from the Zinitix touchscreen."
+  @moduledoc """
+  Reads taps and horizontal drags from the Zinitix touchscreen, whose
+  coordinates are panel pixels (0-453).
+
+  It sends the target `:touch` when a finger lands, `{:drag, dx}` as a
+  horizontal drag moves (dx in pixels from where it started, the latest
+  only), `{:release, dx}` when a drag lets go, and `:tap` for a touch that
+  barely moved. Vertical movement is ignored.
+  """
   use GenServer
 
   @ev_syn 0
@@ -11,7 +19,10 @@ defmodule HelloWatch.Clock.Touch do
   @abs_mt_x 53
   @abs_mt_y 54
   @abs_mt_tracking_id 57
-  @threshold 60
+  # A touch becomes a drag once it has moved this far, mostly sideways.
+  @drag_slop 12
+  # A touch that moves less than this is a tap.
+  @tap_slop 25
 
   def start_link(opts), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -42,7 +53,8 @@ defmodule HelloWatch.Clock.Touch do
          x: nil,
          y: nil,
          start: nil,
-         down: false
+         down: false,
+         dragging: false
        }}
     else
       {:stop, :touchscreen_not_found}
@@ -59,16 +71,20 @@ defmodule HelloWatch.Clock.Touch do
 
   def decode(partial), do: {[], partial}
 
-  def gesture(events, state \\ %{x: nil, y: nil, start: nil, down: false}) do
-    Enum.reduce(events, {[], state}, &event/2)
+  def gesture(events, state \\ %{x: nil, y: nil, start: nil, down: false, dragging: false}) do
+    {gestures, state} = Enum.reduce(events, {[], state}, &event/2)
+    {Enum.reverse(gestures), state}
   end
 
   @impl true
   def handle_info({port, {:data, data}}, %{port: port} = state) do
     {events, buffer} = decode(state.buffer <> data)
-    {gestures, gesture_state} = gesture(events, Map.take(state, [:x, :y, :start, :down]))
+
+    {gestures, gesture_state} =
+      gesture(events, Map.take(state, [:x, :y, :start, :down, :dragging]))
+
     if gesture_state.down and not state.down, do: send(state.target, :touch)
-    Enum.each(gestures, &send(state.target, {:swipe, &1}))
+    Enum.each(latest_drag(gestures), &send(state.target, &1))
     {:noreply, state |> Map.merge(gesture_state) |> Map.put(:buffer, buffer)}
   end
 
@@ -89,21 +105,48 @@ defmodule HelloWatch.Clock.Touch do
   defp event({@ev_syn, 0, 0}, {gestures, %{down: true, start: nil, x: x, y: y} = state})
        when is_integer(x) and is_integer(y), do: {gestures, %{state | start: {x, y}}}
 
+  defp event({@ev_syn, 0, 0}, {gestures, %{down: true, start: {sx, sy}, x: x, y: y} = state}) do
+    dx = x - sx
+
+    if state.dragging or (abs(dx) >= @drag_slop and abs(dx) > abs(y - sy)),
+      do: {[{:drag, dx} | gestures], %{state | dragging: true}},
+      else: {gestures, state}
+  end
+
   defp event(_, acc), do: acc
 
-  defp begin_touch({gestures, state}), do: {gestures, %{state | down: true, start: nil}}
+  # A new contact while a drag is still going (the controller can start a
+  # fresh tracking id mid-drag) lets that drag go first, so it never hangs.
+  defp begin_touch({gestures, %{dragging: true, start: {sx, _}, x: x} = state}),
+    do: begin_touch({[{:release, x - sx} | gestures], %{state | dragging: false}})
+
+  defp begin_touch({gestures, state}),
+    do: {gestures, %{state | down: true, start: nil, dragging: false}}
 
   defp end_touch({gestures, %{down: true, start: {sx, sy}, x: x, y: y} = state}) do
     dx = x - sx
-    dy = y - sy
 
     gesture =
-      if abs(dx) >= @threshold and abs(dx) > abs(dy),
-        do: [if(dx < 0, do: :left, else: :right)],
-        else: []
+      cond do
+        state.dragging -> [{:release, dx}]
+        abs(dx) < @tap_slop and abs(y - sy) < @tap_slop -> [:tap]
+        true -> []
+      end
 
-    {gestures ++ gesture, %{state | down: false, start: nil}}
+    {gesture ++ gestures, %{state | down: false, start: nil, dragging: false}}
   end
 
-  defp end_touch({gestures, state}), do: {gestures, %{state | down: false, start: nil}}
+  defp end_touch({gestures, state}),
+    do: {gestures, %{state | down: false, start: nil, dragging: false}}
+
+  # A batch of events can hold many drag steps; only the last one of each
+  # run matters to the display.
+  defp latest_drag(gestures) do
+    gestures
+    |> Enum.chunk_by(&match?({:drag, _}, &1))
+    |> Enum.flat_map(fn
+      [{:drag, _} | _] = drags -> [List.last(drags)]
+      other -> other
+    end)
+  end
 end

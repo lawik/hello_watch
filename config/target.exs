@@ -142,6 +142,11 @@ config :mdns_lite,
     }
   ]
 
+# Emerge's minimal raster renderer: Skia on the CPU with no EGL, GBM or
+# desktop libraries, none of which the system ships. Frames are written to
+# /dev/fb0 by HelloWatch.Clock.Display; see UI.md.
+config :emerge, compiled_backends: []
+
 # Local time for the watch face, as an IANA zone name so daylight saving is
 # handled. Set this to wherever the watch actually is.
 config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels"
