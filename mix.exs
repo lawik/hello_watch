@@ -60,6 +60,11 @@ defmodule HelloWatch.MixProject do
       {:muontrap, "~> 1.8"},
       # The QR code for logging in to Tailscale from the watch.
       {:eqrcode, "~> 0.2.1"},
+      # Voice memos (see HelloWatch.Recorder).
+      {:membrane_core, "~> 1.2"},
+      {:membrane_file_plugin, "~> 0.17"},
+      {:membrane_wav_plugin, "~> 0.10"},
+      {:membrane_raw_audio_format, "~> 0.12"},
 
       # Allow Nerves.Runtime on host to support development, testing and CI.
       # See config/host.exs for usage.

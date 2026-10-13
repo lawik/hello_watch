@@ -1,11 +1,14 @@
 defmodule HelloWatch.Clock.Button do
   @moduledoc """
-  Reads the watch's two buttons and toggles the display on a press.
+  Reads the watch's two buttons.
 
-  The bottom button is `gpio-keys` (KEY_VOLUMEDOWN, 114). The top one is the
-  PMIC power key (`pm8941_pwrkey`, KEY_POWER, 116), the only button that can
-  wake the watch from suspend (see HelloWatch.Suspend); its press arrives as
-  the watch resumes.
+  The top one is the PMIC power key (`pm8941_pwrkey`, KEY_POWER, 116): a
+  press toggles the display. It's the only button that can wake the watch
+  from suspend (see HelloWatch.Suspend); its press arrives as the watch
+  resumes.
+
+  The bottom one is `gpio-keys` (KEY_VOLUMEDOWN, 114): it records while
+  held, sending `{:record, true}` on press and `{:record, false}` on release.
   """
   use GenServer
 
@@ -50,11 +53,20 @@ defmodule HelloWatch.Clock.Button do
       when is_map_key(ports, port) do
     %{code: code, buffer: buffer} = button = ports[port]
     {events, buffer} = decode(buffer <> data)
-    for {1, ^code, 1} <- events, do: send(state.target, :toggle_display)
+
+    for {1, ^code, value} <- events,
+        message = message(code, value),
+        do: send(state.target, message)
+
     {:noreply, put_in(state, [:ports, port], %{button | buffer: buffer})}
   end
 
   def handle_info({port, {:exit_status, status}}, %{ports: ports} = state)
       when is_map_key(ports, port),
       do: {:stop, {:input_closed, status}, state}
+
+  defp message(116, 1), do: :toggle_display
+  defp message(114, 1), do: {:record, true}
+  defp message(114, 0), do: {:record, false}
+  defp message(_code, _value), do: nil
 end

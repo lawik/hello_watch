@@ -11,6 +11,10 @@ defmodule HelloWatch.Clock do
       the centre with the apps in a ring (HelloWatch.Clock.Inventory). A tap
       opens one.
 
+  Holding the bottom button records a voice memo (HelloWatch.Recorder), and
+  a badge with its running time slides down from the top meanwhile
+  (HelloWatch.Clock.Recording).
+
   Dragging sideways moves through the most recently used apps: right goes
   back to older ones, left forward again. The next app slides in over the
   current one, which stays put; its leading edge is an arc, concave from the
@@ -53,11 +57,12 @@ defmodule HelloWatch.Clock do
     MoonApp,
     Pages,
     Palette,
+    Recording,
     Sky,
     TailscalePage
   }
 
-  alias HelloWatch.{Power, Sensors, Tailscale}
+  alias HelloWatch.{Power, Recorder, Sensors, Tailscale}
 
   # The inventory's ring, from twelve o'clock.
   @apps [:clock, :battery, :network, :sensors, :moon, :tailscale]
@@ -186,7 +191,12 @@ defmodule HelloWatch.Clock do
         vdrag: nil,
         vdrag_timer: nil,
         vmoving: nil,
-        transitions: 0
+        transitions: 0,
+        # While the bottom button records a memo, when it started, and the
+        # seconds it has run, which the badge keeps showing as it leaves.
+        recording: nil,
+        record_seconds: 0,
+        record_ref: nil
       }
       |> schedule_tick()
       |> schedule_power()
@@ -241,7 +251,11 @@ defmodule HelloWatch.Clock do
     el(
       [width(px(454)), height(px(454))] ++
         swipes(state) ++
-        Enum.map([Inventory.render(@apps, state.app, at, ms) | layers], &Nearby.in_front/1),
+        Enum.map(
+          [Inventory.render(@apps, state.app, at, ms) | layers] ++
+            [Recording.render(state.record_seconds, state.recording != nil)],
+          &Nearby.in_front/1
+        ),
       child
     )
   end
@@ -614,6 +628,37 @@ defmodule HelloWatch.Clock do
     end
   end
 
+  # The bottom button records while held; see HelloWatch.Recorder.
+  def handle_info({:record, true}, %{recording: nil} = state) do
+    state = if state.on, do: start_idle_timer(state), else: wake(state)
+
+    case safely(&Recorder.start/0) do
+      {:ok, _path} ->
+        state = %{state | recording: System.monotonic_time(:millisecond), record_seconds: 0}
+        {:noreply, state |> schedule_record_tick() |> Viewport.rerender()}
+
+      error ->
+        Logger.warning("Recording: #{inspect(error)}")
+        {:noreply, state}
+    end
+  end
+
+  def handle_info({:record, false}, %{recording: since} = state) when since != nil do
+    safely(&Recorder.stop/0)
+    state = %{state | recording: nil, record_ref: nil} |> start_idle_timer()
+    {:noreply, Viewport.rerender(state)}
+  end
+
+  def handle_info({:record, _down}, state), do: {:noreply, state}
+
+  def handle_info({:record_tick, ref}, %{record_ref: ref} = state) do
+    seconds = div(System.monotonic_time(:millisecond) - state.recording, 1000)
+    state = schedule_record_tick(%{state | record_seconds: seconds})
+    {:noreply, if(state.on, do: Viewport.rerender(state), else: state)}
+  end
+
+  def handle_info({:record_tick, _ref}, state), do: {:noreply, state}
+
   def handle_info(:touch, %{on: true} = state), do: {:noreply, start_idle_timer(state)}
   def handle_info(:touch, state), do: {:noreply, wake(state)}
 
@@ -624,6 +669,10 @@ defmodule HelloWatch.Clock do
   end
 
   def handle_info(:dim, state), do: {:noreply, state}
+
+  # The screen stays on while recording: suspending would end it.
+  def handle_info(:screen_timeout, %{on: true, recording: since} = state) when since != nil,
+    do: {:noreply, start_idle_timer(state)}
 
   def handle_info(:screen_timeout, %{on: true} = state), do: {:noreply, sleep(state)}
   def handle_info(:screen_timeout, state), do: {:noreply, state}
@@ -914,6 +963,14 @@ defmodule HelloWatch.Clock do
     )
 
     %{state | tick_ref: ref}
+  end
+
+  # On each whole second since the recording started.
+  defp schedule_record_tick(state) do
+    ref = make_ref()
+    elapsed = System.monotonic_time(:millisecond) - state.recording
+    Process.send_after(self(), {:record_tick, ref}, 1000 - rem(elapsed, 1000))
+    %{state | record_ref: ref}
   end
 
   defp schedule_power(state) do
