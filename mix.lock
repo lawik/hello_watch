@@ -5,7 +5,7 @@
   "circuits_spi": {:hex, :circuits_spi, "2.2.0", "830a56d1ad650d0612184d06b6065d1c0a48905f2961f3b0ae32eec83ac8dd44", [:make, :mix], [{:elixir_make, "~> 0.6", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "e577974c7d5503ea3d78f6f86d57bf9d0fb4df6304dbe55ca4b0cf76e93e429f"},
   "circular_buffer": {:hex, :circular_buffer, "1.1.0", "af9332c40d600cc27b160eebd9fad1bf0a8106cd62e9f57d6cc8f028d3cc46d1", [:mix], [], "hexpm", "0daa0a4fcb3a7ffabc8576bdbf64c99adc6d4b37eab1185179140769ba58f571"},
   "elixir_make": {:hex, :elixir_make, "0.10.0", "16577e2583a79bb79237bbff349619ef5d80afffc07eac6e4faf0d00e2ddaf7d", [:mix], [], "hexpm", "dc1f09fb7fa68866b886abd5f0f3c83553b1a19a52359a899e92af1bb3b31982"},
-  "emerge": {:git, "git@github.com:lawik/emerge.git", "30bf6e5a44730bc6145bbc35e773b81ca4d27f5c", [branch: "feat/drm-animation-pacing"]},
+  "emerge": {:git, "git@github.com:lawik/emerge.git", "30bf6e5a44730bc6145bbc35e773b81ca4d27f5c", [branch: "main"]},
   "eqrcode": {:hex, :eqrcode, "0.2.1", "d12838813e8fc87b8940cc05f9baadb189031f6009facdc56ff074375ec73b6e", [:mix], [], "hexpm", "d5828a222b904c68360e7dc2a40c3ef33a1328b7c074583898040f389f928025"},
   "extty": {:hex, :extty, "0.4.3", "7201d6f9d0533960a0ba894a468c0b8809c2f215e56c98c2728d0215c1d91089", [:mix], [], "hexpm", "df9ca68c4be77d01aea59cbffdd7058b92d4dee7f5bc678240d601eea8608281"},
   "fwup": {:hex, :fwup, "1.1.0", "6c9d5f06a38263855dcf34f5a5b4da46c2ca42f6e3f873b8f932d095ce010765", [:mix], [], "hexpm", "3ff61d932a42785efc3324ecab6cf9bd3de75dacfca16d9e659a7173ef9f15d6"},

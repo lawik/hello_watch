@@ -53,7 +53,7 @@ defmodule HelloWatch.MixProject do
       # Tracks the frame pacing branch for `drm_animation_pacing: :commit`
       # (see HelloWatch.Clock). It has no precompiled NIFs, so it builds from
       # source, which needs rustler.
-      {:emerge, git: "git@github.com:lawik/emerge.git", branch: "feat/drm-animation-pacing"},
+      {:emerge, git: "git@github.com:lawik/emerge.git", branch: "main"},
       {:rustler, "~> 0.38.0", runtime: false},
 
       # Runs tailscaled (see HelloWatch.Tailscale).
