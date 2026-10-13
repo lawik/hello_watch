@@ -36,6 +36,7 @@ defmodule HelloWatch.Application do
       [
         HelloWatch.GPS,
         HelloWatch.Vibrator,
+        HelloWatch.Audio,
         HelloWatch.Nanohub.Guard,
         HelloWatch.Suspend,
         HelloWatch.Tailscale,

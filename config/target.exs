@@ -147,7 +147,7 @@ config :mdns_lite,
 nerves_hub_key = System.get_env("NH_PRODUCT_KEY")
 nerves_hub_secret = System.get_env("NH_PRODUCT_SECRET")
 
-if not public_image? and nerves_hub_key && nerves_hub_secret do
+if not public_image? and is_binary(nerves_hub_key) and is_binary(nerves_hub_secret) do
   config :nerves_hub_link,
     host: "devices.qa.nervescloud.biz",
     remote_iex: true,
