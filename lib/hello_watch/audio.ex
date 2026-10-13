@@ -29,7 +29,9 @@ defmodule HelloWatch.Audio do
     {"QUAT_MI2S_RX Audio Mixer MultiMedia1", "1"},
     {"MultiMedia2 Mixer TERT_MI2S_TX", "1"},
     {"DEC1 MUX", "DMIC1"},
-    {"CIC1 MUX", "DMIC"}
+    {"CIC1 MUX", "DMIC"},
+    # 84 is 0 dB; the bare mic records speech around -55 dBFS.
+    {"TX1 Digital Volume", "108"}
   ]
 
   def start_link(opts \\ []) do
