@@ -142,14 +142,30 @@ config :mdns_lite,
     }
   ]
 
-# Emerge's minimal raster renderer: Skia on the CPU with no EGL, GBM or
-# desktop libraries, none of which the system ships. Frames are written to
-# /dev/fb0 by HelloWatch.Clock.Display; see UI.md.
-config :emerge, compiled_backends: []
+# NervesHub. The product's shared secret comes from the environment (see
+# .envrc.example); without it the watch doesn't connect.
+nerves_hub_key = System.get_env("NH_PRODUCT_KEY")
+nerves_hub_secret = System.get_env("NH_PRODUCT_SECRET")
+
+if not public_image? and nerves_hub_key && nerves_hub_secret do
+  config :nerves_hub_link,
+    host: "devices.qa.nervescloud.biz",
+    remote_iex: true,
+    shared_secret: [product_key: nerves_hub_key, product_secret: nerves_hub_secret]
+else
+  config :nerves_hub_link, connect: false
+end
+
+# Emerge's DRM backend with OpenGL ES, for the GPU system (Mesa freedreno,
+# EGL and GBM; wip/gpu of nerves_system_tickwatch_pro3, passed as
+# NERVES_SYSTEM until it's released). On the v0.2.0 system, which has no
+# EGL or GBM, use `compiled_backends: []` (the minimal raster renderer) and
+# `renderer: :framebuffer` below instead. See UI.md.
+config :emerge, compiled_backends: [drm: [:opengl]]
 
 # Local time for the watch face, as an IANA zone name so daylight saving is
 # handled. Set this to wherever the watch actually is.
-config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels"
+config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels", renderer: :drm
 
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

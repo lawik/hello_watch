@@ -2,9 +2,9 @@
 
 Example Nerves app for the Mobvoi TicWatch Pro 3, built on
 [`nerves_system_tickwatch_pro3`](https://github.com/mlainez/nerves_system_tickwatch_pro3).
-It shows an analog face with the moon's phases for hours, and battery,
-network, sensor and Tailscale pages, drawn with
-[Emerge](https://hexdocs.pm/emerge).
+It shows an analog face with the moon's phases for hours, a sky of
+switches above it, an inventory of apps below, and battery, network,
+sensor, moon and Tailscale apps, drawn with [Emerge](https://hexdocs.pm/emerge).
 
 ## Try it without building
 
@@ -43,10 +43,14 @@ without your SSH keys or Wi-Fi credentials.
 
 - **Bottom button** toggles the screen; a touch also wakes it. The screen
   fades off after 2 minutes idle.
-- **Drag** left or right to move between the face and the battery,
-  network, sensor and Tailscale pages. The page follows the finger and
-  turns when let go past halfway. The face's glowing moon is tonight's
-  real phase.
+- **Pull down** for the sky: the watch's switches as constellations. A
+  bright star is on, a dim one off; tap it to switch Wi-Fi, Bluetooth or
+  Tailscale. Push back up to return.
+- **Pull up** for the inventory: a dark circle with the apps in a ring
+  (clock, battery, network, sensors, moon, Tailscale). Tap one to open it.
+- **Drag sideways** to move through recently used apps: right goes back,
+  left forward again. The app follows the finger and switches when let go
+  past halfway. The face's glowing moon is tonight's real phase.
 - The **battery** (faint behind the hands, and on its own page) is estimated from the supply
   voltage, since the fuel gauge sat behind the dead sensor hub. Expect it
   to be off by up to about 10%. It reads high while charging, and only

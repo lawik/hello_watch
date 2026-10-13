@@ -1,22 +1,38 @@
 defmodule HelloWatch.Clock do
   @moduledoc """
-  A moon-phase clock face, then battery, network, sensor and Tailscale
-  pages, as an Emerge viewport. Time defaults to UTC.
+  The watch's views, as an Emerge viewport. Time defaults to UTC.
 
-  Pages follow the finger: the page being dragged is a disc, glowing at its
-  edge, and the next page shows beneath it as a crescent that waxes as the
-  disc moves away, like the moon. Letting go past halfway turns the page;
-  short of that it springs back.
+  The things the watch is for are apps: the clock face, battery, network,
+  sensors, the moon and Tailscale. Around every app are two more places:
 
-  On the watch the viewport renders headless with Emerge's CPU raster
-  renderer and sends each new frame to `HelloWatch.Clock.Display`, which puts
-  it on the framebuffer (see UI.md). Started with `display: nil` and
-  `backend: :wayland` it opens a window instead, for working on the UI on a
-  host.
+    * **The sky,** pulled down from above: the watch's global switches as
+      constellations (HelloWatch.Clock.Sky). The view shifts up to show it.
+    * **The inventory,** pulled up from below: a dark circle that grows from
+      the centre with the apps in a ring (HelloWatch.Clock.Inventory). A tap
+      opens one.
+
+  Dragging sideways moves through the most recently used apps: right goes
+  back to older ones, left forward again. The next app slides in over the
+  current one, which stays put; its leading edge is an arc, concave from the
+  right and convex from the left. Letting go past halfway switches; short of
+  that it slides back out.
+
+  On the watch the viewport renders one of two ways, chosen with
+  `renderer:`:
+
+    * `:drm`: Emerge's DRM backend draws with OpenGL ES on the GPU and
+      page-flips whole frames onto the panel. `HelloWatch.Clock.Display` then
+      only handles the backlight, for dimming and the screen going dark;
+      Emerge 0.4.2 can't power the panel down.
+    * `:framebuffer` (the default): headless on the CPU, each frame sent to
+      `HelloWatch.Clock.Display`, which writes it to `/dev/fb0` (see UI.md).
+
+  Started with `display: nil` and `backend: :wayland` it opens a window
+  instead, for working on the UI on a host.
 
   A frame is only rendered when something on screen changes: once a minute
   for the face, which has no second hand, every few seconds for the battery
-  and network pages, and as readings arrive on the sensor page. Nothing
+  and network views, and as readings arrive on the sensor view. Nothing
   renders while the screen is off.
 
   Left alone, the screen dims after `@dim_timeout`. A touch or swipe brings
@@ -26,35 +42,71 @@ defmodule HelloWatch.Clock do
   use Emerge
   require Logger
 
-  alias HelloWatch.Clock.{BatteryPage, Display, Face, Moon, Pages, Palette, TailscalePage}
+  alias HelloWatch.Clock.{
+    Backdrop,
+    BatteryPage,
+    Controls,
+    Display,
+    Face,
+    Inventory,
+    Moon,
+    MoonApp,
+    Pages,
+    Palette,
+    Sky,
+    TailscalePage
+  }
+
   alias HelloWatch.{Power, Sensors, Tailscale}
 
-  @pages [:clock, :battery, :network, :sensors, :tailscale]
-  @battery 1
-  @network 2
-  @sensors 3
-  @tailscale 4
+  # The inventory's ring, from twelve o'clock.
+  @apps [:clock, :battery, :network, :sensors, :moon, :tailscale]
 
   # The hub delivers every event to a single reader, so one stream serves the
   # whole app: charge alone while the face is up, plus the rest on the sensor
-  # page, and nothing while the screen is off. See HelloWatch.Sensors.open/1.
+  # view, and nothing while the screen is off. See HelloWatch.Sensors.open/1.
   @idle_stream [:battery]
   @sensor_stream [:battery, :heart, {:accel, 25}, {:gyro, 25}]
 
   @dim_timeout :timer.seconds(15)
   @idle_timeout :timer.minutes(2)
   @power_interval :timer.seconds(5)
-  # How often the Tailscale page rereads tailscaled, to catch the login URL
-  # appearing and the login completing.
+  # How often the Tailscale view rereads tailscaled, to catch the login URL
+  # appearing and the login completing, and how often the sky rereads the
+  # switches while it's open.
   @tailscale_interval :timer.seconds(2)
-  # How long a page takes to wane away on a swipe.
-  # How long a page takes to slide all the way off, and how far a drag has
-  # to go, in pixels, to turn the page when the finger lets go.
+  @controls_interval :timer.seconds(3)
+  # How long an app takes to slide all the way in, and how far a drag has
+  # to go, in pixels, to switch apps when the finger lets go.
   @transition_ms 520
-  @slide 480
   @commit_px 227
-  # A drag that hasn't moved for this long is settled as if let go, in case
-  # its release went missing.
+  # An incoming app is a slab bigger than the panel whose leading edge is
+  # an arc: concave when it comes from the right, a gentle arc of radius
+  # `@arc`; convex from the left, a rounder one of radius `@convex_arc`,
+  # close to the panel's own. Over the panel's height an arc is its bulge
+  # deep.
+  @arc 400
+  @bulge round(@arc - :math.sqrt(@arc * @arc - 227 * 227))
+  @convex_arc 240
+  @convex_bulge round(@convex_arc - :math.sqrt(@convex_arc * @convex_arc - 227 * 227))
+  # The cloud fronts' SVG bands, {width, arc peak}; see priv/images/edge-*.svg.
+  @convex_edge {460, 350}
+  @concave_edge {306, 195}
+  # The first pixels of a drag only arm it; then the view catches up.
+  @dead 30
+  @catch_up 1.15
+  # How far a vertical drag travels to open the sky or the inventory fully,
+  # and the share of that past which letting go opens or closes it.
+  @sky_travel 454
+  @inventory_travel 300
+  @open_at 0.4
+
+  # How far the app follows the sky down, and how much it shrinks away.
+  @sky_parallax 0.3
+  @sky_recede 0.12
+
+  # A drag or pull that hasn't moved for this long is settled as if let go,
+  # in case its release went missing.
   @drag_timeout 1000
 
   @fonts [
@@ -71,7 +123,9 @@ defmodule HelloWatch.Clock do
 
     %{
       on: state.on,
-      page: Enum.at(@pages, state.page),
+      page: state.app,
+      overlay: state.overlay,
+      recents: state.recents,
       time_zone: state.time_zone,
       battery: state.battery,
       power: state.power,
@@ -81,19 +135,25 @@ defmodule HelloWatch.Clock do
 
   @impl Viewport
   def mount(opts) do
-    {config, opts} = Keyword.split(opts, [:display, :time_zone])
+    {config, opts} = Keyword.split(opts, [:display, :time_zone, :renderer])
     display = Keyword.get(config, :display, Display)
+    renderer = if display, do: Keyword.get(config, :renderer, :framebuffer), else: :window
     # The framebuffer takes the renderer's bytes as they are; see Palette.
-    Palette.bgr(display != nil)
+    Palette.bgr(renderer == :framebuffer)
 
     power = Power.read()
 
     state =
       %{
         display: display,
+        renderer: renderer,
         on: true,
         dimmed: false,
-        page: 0,
+        app: :clock,
+        # Most recent first; sideways drags move through it.
+        recents: [:clock],
+        # :sky or :inventory while one is open.
+        overlay: nil,
         time_zone: Keyword.get(config, :time_zone, "Etc/UTC"),
         last_press: nil,
         sensor_port: nil,
@@ -110,12 +170,22 @@ defmodule HelloWatch.Clock do
         tailscale: nil,
         tailscale_read: nil,
         tailscale_ref: nil,
-        # How far a finger has dragged the page, while it's down.
+        controls: nil,
+        controls_read: nil,
+        controls_ref: nil,
+        control_task: nil,
+        # How far a finger has dragged sideways, while it's down.
         drag: nil,
         drag_timer: nil,
-        # The page sliding off or back after a drag lets go: %{top:, below:,
-        # from:, to:, n:}.
+        # The app sliding in or back out after a sideways drag lets go:
+        # %{base:, incoming:, side:, from:, to:, n:}.
         moving: nil,
+        # A vertical pull while the finger is down, %{kind:, at:, dy:} with
+        # `at` from 0 (closed) to 1 (open), and its settling after letting
+        # go, %{kind:, from:, to:, n:}.
+        vdrag: nil,
+        vdrag_timer: nil,
+        vmoving: nil,
         transitions: 0
       }
       |> schedule_tick()
@@ -123,10 +193,10 @@ defmodule HelloWatch.Clock do
       |> stream(@idle_stream)
       |> start_idle_timer()
 
-    {:ok, state, Keyword.merge(viewport(display), opts)}
+    {:ok, state, Keyword.merge(viewport(renderer, display), opts)}
   end
 
-  defp viewport(nil) do
+  defp viewport(:window, _display) do
     [
       otp_app: :hello_watch,
       title: "HelloWatch",
@@ -136,8 +206,8 @@ defmodule HelloWatch.Clock do
     ]
   end
 
-  defp viewport(display) do
-    viewport(nil) ++
+  defp viewport(:framebuffer, display) do
+    viewport(:window, display) ++
       [
         backend: :headless,
         rendering_api: :raster,
@@ -145,82 +215,265 @@ defmodule HelloWatch.Clock do
       ]
   end
 
+  # The panel is DSI-1 on the display controller's KMS device, card1.
+  defp viewport(:drm, display) do
+    viewport(:window, display) ++
+      [
+        backend: :drm,
+        rendering_api: :opengl,
+        drm_card: "/dev/dri/card1",
+        drm_output: "DSI-1",
+        hw_cursor: false,
+        # The panel takes 20-40 ms to flip a frame. Drawing the next frame
+        # while it does doubles the frame rate of animations.
+        drm_animation_pacing: :commit,
+        # Frame timings for EmergeSkia.stats/2, which can only be switched on
+        # as the renderer starts.
+        stats: true
+      ]
+  end
+
   @impl Viewport
   def render(state) do
-    {below, top} =
-      cond do
-        state.drag != nil ->
-          {neighbour(state, state.drag),
-           held(page(state, state.page), state.drag, state.transitions)}
+    {child, layers} = scene(state)
+    {at, ms} = inventory_at(state)
 
-        state.moving != nil ->
-          {state.moving.below, sliding(page(state, state.moving.top), state.moving)}
-
-        true ->
-          {state.page, nil}
-      end
-
-    # Emerge's own gestures, for a windowed host; on the watch, drags come
-    # from HelloWatch.Clock.Touch.
     el(
-      [
-        width(px(454)),
-        height(px(454)),
-        Event.on_swipe_left({:swipe, :left}),
-        Event.on_swipe_right({:swipe, :right})
-      ] ++ if(top, do: [Nearby.in_front(top)], else: []),
-      page(state, below)
+      [width(px(454)), height(px(454))] ++
+        swipes(state) ++
+        Enum.map([Inventory.render(@apps, state.app, at, ms) | layers], &Nearby.in_front/1),
+      child
     )
   end
 
-  defp page(state, 0) do
-    Face.render(local_time(state), Moon.phase(DateTime.utc_now()), battery(state))
-  end
+  # How far open the inventory is, and with `ms`, easing there. It stays
+  # mounted while closed, shrunk to nothing and hidden: Emerge (0.4.2) skips
+  # the ease of an element mounted by the same pull, and that unanimated
+  # frame can be dropped by its DRM presenter, which then kept showing the
+  # half-open drag frame.
+  defp inventory_at(%{vdrag: %{kind: :inventory, at: at}}), do: {at, nil}
+  defp inventory_at(%{vdrag: %{}}), do: {0, nil}
+  defp inventory_at(%{vmoving: %{kind: :inventory} = m}), do: {m.to, m.ms}
+  defp inventory_at(%{vmoving: %{}}), do: {0, nil}
+  defp inventory_at(%{overlay: :inventory}), do: {1, nil}
+  defp inventory_at(_state), do: {0, nil}
 
-  defp page(state, @battery), do: BatteryPage.render(battery(state), @battery)
-  defp page(_state, @network), do: Pages.render("Network", network_rows(), @network)
-  defp page(state, @sensors), do: Pages.render("Sensors", sensor_rows(state), @sensors)
-  defp page(state, @tailscale), do: TailscalePage.render(state.tailscale, @tailscale)
-
-  # The page under the finger is a full disc, moonlight at its edge, that
-  # moves with the drag. The round panel shows only where it still overlaps,
-  # a lens that thins as it goes, so the page beneath appears as a crescent
-  # with a concave edge that waxes to full, like the moon.
-  defp held(tree, dx, n), do: el(disc_attrs({:held, n}) ++ [Transform.move_x(dx)], tree)
-
-  # Let go, the disc carries on off the panel or springs back, from where
-  # the finger left it. A new key for each one animates it from the start.
-  defp sliding(tree, moving) do
-    ms = Kernel.max(round(@transition_ms * abs(moving.to - moving.from) / @slide), 120)
-
-    el(
-      disc_attrs({:sliding, moving.n}) ++
-        [
-          Transform.move_x(moving.to),
-          Animation.animate_enter(
-            [[Transform.move_x(moving.from)], [Transform.move_x(moving.to)]],
-            ms,
-            :ease_out
-          )
-        ],
-      tree
-    )
-  end
-
-  defp disc_attrs(key) do
+  # Emerge's own gestures, for a window on a host. On the watch, drags come
+  # from HelloWatch.Clock.Touch; Emerge's DRM backend reads the touchscreen
+  # too, and its swipes would arrive twice.
+  defp swipes(%{renderer: :window}) do
     [
-      key(key),
-      width(px(454)),
-      height(px(454)),
-      Border.rounded(227),
-      Border.glow(Palette.c(:lilac, 0.5), 10)
+      Event.on_swipe_left({:swipe, :left}),
+      Event.on_swipe_right({:swipe, :right}),
+      Event.on_swipe_down({:swipe, :down}),
+      Event.on_swipe_up({:swipe, :up})
     ]
   end
 
-  # Dragging left brings in the next page, right the previous one.
+  defp swipes(_state), do: []
+
+  # What's on screen, as the root's child and the layers over it. The app
+  # underneath is always in the same keyed element, and the sky and the
+  # inventory keep their keys from first pull to last, so a pull's frames
+  # only change attributes and Emerge never rebuilds those subtrees.
+  defp scene(%{vdrag: %{kind: kind, at: at}} = state), do: pulled(state, kind, at, nil)
+
+  defp scene(%{vmoving: %{} = m} = state), do: pulled(state, m.kind, m.to, m.ms)
+
+  defp scene(%{overlay: overlay} = state) when overlay != nil,
+    do: pulled(state, overlay, 1, nil)
+
+  defp scene(%{drag: dx} = state) when dx != nil do
+    side = side(dx)
+    at = position(side, dx)
+    incoming = neighbour(state, dx)
+
+    {base(state, state.app),
+     incoming(state, state.app, incoming, side, {at, at}, {:drag, state.transitions})}
+  end
+
+  defp scene(%{moving: %{} = m} = state),
+    do:
+      {base(state, m.base),
+       incoming(state, m.base, m.incoming, m.side, {m.from, m.to}, {:moving, m.n})}
+
+  defp scene(state), do: {base(state, state.app), []}
+
+  # The sky or the inventory `at` the way open, from 0 to 1. With `ms`, it
+  # eases there from wherever it is on screen.
+  #
+  # The app underneath lags behind the sky and shrinks a little, as if the
+  # view tips up from the ground to the stars.
+  defp pulled(state, :sky, at, ms) do
+    shift = round(at * 454)
+    app = [Transform.move_y(round(shift * @sky_parallax)), Transform.scale(1 - at * @sky_recede)]
+
+    {el([key(:app)] ++ eased(app, ms), view(state, state.app)),
+     [el([key(:sky)] ++ eased([Transform.move_y(shift - 454)], ms), Sky.render(state.controls))]}
+  end
+
+  # The inventory itself is always there; see render/1.
+  defp pulled(state, :inventory, _at, _ms), do: {base(state, state.app), []}
+
+  defp base(state, app), do: el([key(:app)], view(state, app))
+
+  @doc false
+  # `attrs`, and with `ms`, an ease to them from where they are now.
+  def eased(attrs, nil), do: attrs
+  def eased(attrs, ms), do: attrs ++ [Animation.change(attrs, ms, :ease_out)]
+
+  defp view(state, :clock),
+    do: Face.render(local_time(state), Moon.phase(DateTime.utc_now()), battery(state))
+
+  defp view(state, :battery), do: BatteryPage.render(battery(state), :battery)
+  defp view(_state, :network), do: Pages.render("Network", network_rows(), :network)
+  defp view(state, :sensors), do: Pages.render("Sensors", sensor_rows(state), :sensors)
+  defp view(_state, :moon), do: MoonApp.render(Moon.phase(DateTime.utc_now()))
+  defp view(state, :tailscale), do: TailscalePage.render(state.tailscale, :tailscale)
+
+  # The app being pulled in slides over the one shown, which stays put.
+  # `at` is where the incoming app's own content sits, as {from, to}: equal
+  # while dragging, animated after letting go. Each layer gets the same
+  # animation, so they move together.
+  #
+  # From the left, the app is a slab with a convex right edge: its content
+  # and, past it, a bulge its backdrop reaches into.
+  #
+  # From the right, its left edge is concave. Emerge only rounds outwards,
+  # so the slab comes in with a straight edge `@bulge` px ahead of its
+  # content, and the app shown is drawn again on top, clipped to a convex
+  # arc that ends where the concave edge should be. That copy doesn't move,
+  # so it's indistinguishable from the app beneath, and the incoming app
+  # appears to have a hollow edge.
+  #
+  # The shapes are transparent: each view's backdrop is wider than the panel
+  # (HelloWatch.Clock.Backdrop), and a shape clips it. A front of soft cloud
+  # rides each leading edge, over the seam.
+  defp incoming(state, _base, app, :left, at, key) do
+    [
+      el(
+        [
+          key({key, :slab}),
+          width(px(454 + @convex_bulge)),
+          height(px(2 * @convex_arc)),
+          Transform.move_y(227 - @convex_arc),
+          Border.rounded_each(0, @convex_arc, @convex_arc, 0),
+          clip_nearby(),
+          padding_each(@convex_arc - 227, 0, 0, 0)
+        ] ++ slide_x(at, 0),
+        view(state, app)
+      ),
+      edge(app, "images/edge-convex.svg", @convex_edge, at, 454 + @convex_bulge, {key, :edge})
+    ]
+  end
+
+  defp incoming(state, base, app, :right, at, key) do
+    # Wide enough to cover the whole panel to the left of the arc.
+    wide = 454 + 2 * @arc
+
+    slab =
+      el(
+        [
+          key({key, :slab}),
+          width(px(454 + @bulge)),
+          height(px(454)),
+          clip_nearby(),
+          padding_each(0, 0, 0, @bulge)
+        ] ++ slide_x(at, -@bulge),
+        view(state, app)
+      )
+
+    hollow =
+      el(
+        [
+          key({key, :hollow}),
+          width(px(wide)),
+          height(px(2 * @arc)),
+          Transform.move_y(227 - @arc),
+          Border.rounded_each(0, @arc, @arc, 0),
+          clip_nearby()
+        ] ++ hollow_x(at, wide),
+        view(state, base)
+      )
+
+    [slab, hollow, edge(app, "images/edge-concave.svg", @concave_edge, at, 0, {key, :edge})]
+  end
+
+  # The cloud front on a leading edge: an SVG band of puffs along the arc,
+  # `{width, peak}` where peak is the arc's rightmost point in the band, which
+  # starts 20 px above the panel. `tip` is where the arc peaks, past `at`.
+  defp edge(app, source, {width, peak}, at, tip, key) do
+    svg(
+      [
+        key(key),
+        width(px(width)),
+        height(px(494)),
+        Transform.move_y(-20),
+        Svg.color(Backdrop.edge_tint(app))
+      ] ++ slide_x(at, tip - peak),
+      source
+    )
+  end
+
+  # The copy moves with the edge while its content stays put. The content is
+  # held in place with padding, not a counter-transform: Emerge doesn't clip
+  # a transformed child's nearby layers to a rounded parent.
+  defp hollow_x({at, at}, wide), do: hollow_at(at, wide)
+
+  defp hollow_x({from, to}, wide) do
+    hollow_at(to, wide) ++
+      [
+        Animation.animate_enter(
+          [hollow_at(from, wide), hollow_at(to, wide)],
+          settle_ms(from, to),
+          :ease_out
+        )
+      ]
+  end
+
+  defp hollow_at(at, wide),
+    do: [Transform.move_x(at - wide), padding_each(@arc - 227, 0, 0, round(wide - at))]
+
+  # A horizontal position of `offset` past `at`, animated when it moves.
+  defp slide_x({at, at}, offset), do: [Transform.move_x(at + offset)]
+
+  defp slide_x({from, to}, offset) do
+    [
+      Transform.move_x(to + offset),
+      Animation.animate_enter(
+        [[Transform.move_x(from + offset)], [Transform.move_x(to + offset)]],
+        settle_ms(from, to),
+        :ease_out
+      )
+    ]
+  end
+
+  defp settle_ms(from, to), do: Kernel.max(round(@transition_ms * abs(to - from) / 454), 120)
+
+  # Which side the incoming app comes from: dragging left pulls the next
+  # app in from the right.
+  defp side(dx) when dx <= 0, do: :right
+  defp side(_dx), do: :left
+
+  # Where the incoming app's content sits for a drag of `dx`: fully out of
+  # sight at the start, and at 0 when it covers the panel.
+  defp position(side, dx) do
+    travel = travel(dx)
+    if side == :right, do: Kernel.max(454 - travel, 0), else: Kernel.min(away(:left) + travel, 0)
+  end
+
+  defp travel(d), do: Kernel.max(abs(d) - @dead, 0) * @catch_up
+
+  # Fully out of sight, past the panel's rim with the leading edge.
+  defp away(:right), do: 454 + @bulge
+  defp away(:left), do: -(454 + @convex_bulge)
+
+  # The app a sideways drag brings in from the recents: dragging right goes
+  # back to an older one, left forward to a newer one. Nil at either end.
   defp neighbour(state, dx) do
-    step = if dx <= 0, do: 1, else: -1
-    Integer.mod(state.page + step, length(@pages))
+    index = Enum.find_index(state.recents, &(&1 == state.app)) || 0
+    target = if dx <= 0, do: index - 1, else: index + 1
+    if target >= 0, do: Enum.at(state.recents, target)
   end
 
   @impl Viewport
@@ -228,7 +481,7 @@ defmodule HelloWatch.Clock do
   # BEAM just to skip a frame; wake/1 restarts it.
   def handle_info({:tick, ref}, %{tick_ref: ref, on: true} = state) do
     state = schedule_tick(state)
-    {:noreply, if(state.page == 0, do: Viewport.rerender(state), else: state)}
+    {:noreply, if(state.app == :clock, do: Viewport.rerender(state), else: state)}
   end
 
   def handle_info({:tick, ref}, %{tick_ref: ref} = state),
@@ -236,8 +489,8 @@ defmodule HelloWatch.Clock do
 
   def handle_info({:power, ref}, %{power_ref: ref, on: true} = state) do
     state = schedule_power(read_power(state))
-    # The face redraws every second anyway; the network page has no tick.
-    {:noreply, if(state.page in [@battery, @network], do: Viewport.rerender(state), else: state)}
+
+    {:noreply, if(state.app in [:battery, :network], do: Viewport.rerender(state), else: state)}
   end
 
   def handle_info({:power, ref}, %{power_ref: ref} = state),
@@ -259,11 +512,37 @@ defmodule HelloWatch.Clock do
     end
   end
 
-  # Tapping the Tailscale page while logged out starts a login; its QR code
+  def handle_info({:tap, _at}, %{on: false} = state), do: {:noreply, state}
+
+  # In the sky, a tap on a star flips its switch.
+  def handle_info({:tap, at}, %{overlay: :sky, control_task: nil} = state) do
+    case Sky.hit(at) do
+      nil ->
+        {:noreply, state}
+
+      id ->
+        task = Task.async(fn -> safely(fn -> Controls.toggle(id) end) end)
+        {:noreply, %{state | control_task: task.ref}}
+    end
+  end
+
+  # In the inventory, a tap on an app opens it as the circle closes.
+  def handle_info({:tap, at}, %{overlay: :inventory} = state) do
+    case Inventory.hit(@apps, at) do
+      nil ->
+        {:noreply, state}
+
+      app ->
+        state = state |> open_app(app) |> Map.put(:overlay, nil)
+        {:noreply, settle_pull(state, :inventory, 1, 0)}
+    end
+  end
+
+  # Tapping the Tailscale view while logged out starts a login; its QR code
   # shows once tailscaled has a URL.
   def handle_info(
-        :tap,
-        %{on: true, page: @tailscale, tailscale: %{state: "NeedsLogin", logging_in: false}} =
+        {:tap, _at},
+        %{app: :tailscale, overlay: nil, tailscale: %{state: "NeedsLogin", logging_in: false}} =
           state
       ) do
     try do
@@ -275,9 +554,9 @@ defmodule HelloWatch.Clock do
     {:noreply, read_tailscale(state)}
   end
 
-  def handle_info(:tap, state), do: {:noreply, state}
+  def handle_info({:tap, _at}, state), do: {:noreply, state}
 
-  def handle_info({:tailscale, ref}, %{tailscale_ref: ref, on: true, page: @tailscale} = state),
+  def handle_info({:tailscale, ref}, %{tailscale_ref: ref, on: true, app: :tailscale} = state),
     do: {:noreply, read_tailscale(state)}
 
   def handle_info({:tailscale, ref}, %{tailscale_ref: ref} = state),
@@ -293,11 +572,45 @@ defmodule HelloWatch.Clock do
       info == state.tailscale ->
         {:noreply, state}
 
-      state.on and state.page == @tailscale ->
+      state.on and state.app == :tailscale ->
         {:noreply, Viewport.rerender(%{state | tailscale: info})}
 
       true ->
         {:noreply, %{state | tailscale: info}}
+    end
+  end
+
+  def handle_info({:controls, ref}, %{controls_ref: ref, on: true} = state)
+      when state.overlay == :sky or state.vdrag != nil or state.vmoving != nil,
+      do: {:noreply, read_controls(state)}
+
+  def handle_info({:controls, ref}, %{controls_ref: ref} = state),
+    do: {:noreply, %{state | controls_ref: nil}}
+
+  def handle_info({ref, controls}, %{controls_read: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    timer = make_ref()
+    Process.send_after(self(), {:controls, timer}, @controls_interval)
+    state = %{state | controls_read: nil, controls_ref: timer}
+
+    if controls == state.controls,
+      do: {:noreply, state},
+      else: {:noreply, Viewport.rerender(%{state | controls: controls})}
+  end
+
+  # A switch was flipped; Tailscale may instead want logging in, which
+  # happens on its view.
+  def handle_info({ref, result}, %{control_task: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    state = %{state | control_task: nil}
+
+    case result do
+      :login ->
+        state = state |> open_app(:tailscale) |> Map.put(:overlay, nil)
+        {:noreply, Viewport.rerender(state)}
+
+      _ ->
+        {:noreply, read_controls(state)}
     end
   end
 
@@ -317,17 +630,34 @@ defmodule HelloWatch.Clock do
 
   def handle_info({:swipe, _direction}, %{on: false} = state), do: {:noreply, state}
 
-  # A swipe in a host window turns the page in one go.
-  def handle_info({:swipe, direction}, state) when direction in [:left, :right],
-    do: {:noreply, turn(state, if(direction == :left, do: -1, else: 1), 0)}
+  # Swipes in a host window do in one go what drags do on the watch.
+  def handle_info({:swipe, direction}, state) when direction in [:left, :right] do
+    dx = if direction == :left, do: -1, else: 1
+    if state.overlay, do: {:noreply, state}, else: {:noreply, swipe(state, dx)}
+  end
+
+  def handle_info({:swipe, direction}, state) when direction in [:up, :down] do
+    dy = if direction == :down, do: 1000, else: -1000
+    handle_info({:vrelease, dy}, state)
+  end
 
   def handle_info({:drag, _dx}, %{on: false} = state), do: {:noreply, state}
 
   def handle_info({:drag, dx}, state) do
-    if state.drag_timer, do: Process.cancel_timer(state.drag_timer)
-    dx = latest_drag(dx)
-    timer = Process.send_after(self(), {:drag_timeout, dx}, @drag_timeout)
-    {:noreply, Viewport.rerender(%{state | drag: dx, drag_timer: timer, moving: nil})}
+    dx = latest_drag(:drag, dx)
+
+    cond do
+      state.overlay != nil or state.vdrag != nil ->
+        {:noreply, state}
+
+      neighbour(state, dx) == nil ->
+        {:noreply, if(state.drag, do: Viewport.rerender(%{state | drag: nil}), else: state)}
+
+      true ->
+        if state.drag_timer, do: Process.cancel_timer(state.drag_timer)
+        timer = Process.send_after(self(), {:drag_timeout, dx}, @drag_timeout)
+        {:noreply, Viewport.rerender(%{state | drag: dx, drag_timer: timer, moving: nil})}
+    end
   end
 
   def handle_info({:drag_timeout, dx}, %{drag: dx} = state),
@@ -335,18 +665,84 @@ defmodule HelloWatch.Clock do
 
   def handle_info({:drag_timeout, _dx}, state), do: {:noreply, state}
 
+  def handle_info({:release, _dx}, %{drag: nil} = state), do: {:noreply, cancel_drag_timer(state)}
+
   def handle_info({:release, _dx}, %{on: false} = state),
     do: {:noreply, cancel_drag_timer(%{state | drag: nil})}
 
   def handle_info({:release, dx}, state) do
     state = cancel_drag_timer(%{state | drag: nil})
 
+    side = side(dx)
+    from = position(side, dx)
+
     if abs(dx) >= @commit_px,
-      do: {:noreply, turn(state, dx, dx)},
-      else: {:noreply, slide(state, state.page, neighbour(state, dx), dx, 0)}
+      do: {:noreply, turn(state, dx, from)},
+      else: {:noreply, slide(state, state.app, neighbour(state, dx), side, from, away(side))}
   end
 
-  # The sliding page is off the panel, or back in place, by now.
+  def handle_info({:vdrag, _dy}, %{on: false} = state), do: {:noreply, state}
+
+  def handle_info({:vdrag, dy}, state) do
+    dy = latest_drag(:vdrag, dy)
+
+    case pull(state, dy) do
+      nil ->
+        {:noreply, state}
+
+      vdrag ->
+        state =
+          if vdrag.kind == :sky and state.controls_read == nil,
+            do: read_controls(state),
+            else: state
+
+        if state.vdrag_timer, do: Process.cancel_timer(state.vdrag_timer)
+        timer = Process.send_after(self(), {:vdrag_timeout, dy}, @drag_timeout)
+        vdrag = Map.put(vdrag, :dy, dy)
+
+        {:noreply,
+         Viewport.rerender(%{state | vdrag: vdrag, vdrag_timer: timer, vmoving: nil, moving: nil})}
+    end
+  end
+
+  # A pull whose release never came settles from where it was left.
+  def handle_info({:vdrag_timeout, dy}, %{vdrag: %{dy: dy}} = state),
+    do: handle_info({:vrelease, dy}, state)
+
+  def handle_info({:vdrag_timeout, _dy}, state), do: {:noreply, state}
+
+  def handle_info({:vrelease, _dy}, %{on: false} = state),
+    do: {:noreply, cancel_vdrag_timer(%{state | vdrag: nil})}
+
+  def handle_info({:vrelease, dy}, state) do
+    state = cancel_vdrag_timer(state)
+
+    case pull(%{state | vdrag: nil}, dy) do
+      nil ->
+        {:noreply, Viewport.rerender(%{state | vdrag: nil})}
+
+      %{kind: kind, at: at} ->
+        open? = state.overlay == kind
+        # Opening needs to get past @open_at; closing, back below 1 - @open_at.
+        to = if (open? and at > 1 - @open_at) or (not open? and at >= @open_at), do: 1, else: 0
+        state = %{state | vdrag: nil, overlay: nil} |> start_idle_timer()
+
+        state =
+          if kind == :sky and state.controls_read == nil, do: read_controls(state), else: state
+
+        {:noreply, settle_pull(state, kind, at, to)}
+    end
+  end
+
+  # The sky or inventory has finished opening or closing.
+  def handle_info({:pulled, n}, %{vmoving: %{n: n} = m} = state) do
+    overlay = if m.to == 1, do: m.kind, else: nil
+    {:noreply, Viewport.rerender(%{state | vmoving: nil, overlay: overlay})}
+  end
+
+  def handle_info({:pulled, _n}, state), do: {:noreply, state}
+
+  # The incoming app has covered the panel, or gone back out, by now.
   def handle_info({:moved, n}, %{moving: %{n: n}} = state),
     do: {:noreply, Viewport.rerender(%{state | moving: nil})}
 
@@ -359,27 +755,79 @@ defmodule HelloWatch.Clock do
 
   def handle_info(_message, state), do: {:noreply, state}
 
-  # Turns to the page `direction` points to (negative is the next page),
-  # sliding the current one off from `from`.
-  defp turn(state, direction, from) do
-    old = state.page
-    next = neighbour(state, direction)
-    to = if direction <= 0, do: -@slide, else: @slide
+  # Where a vertical drag of `dy` has pulled the sky or the inventory to, as
+  # %{kind:, at:} with `at` from 0 (closed) to 1 (open), or nil if it pulls
+  # nothing. Down opens the sky or closes the inventory; up the reverse.
+  defp pull(%{overlay: nil, drag: nil, moving: nil}, dy) when dy > 0,
+    do: %{kind: :sky, at: Kernel.min(travel(dy) / @sky_travel, 1)}
 
-    state
-    |> leave_page(old)
-    |> Map.put(:page, next)
-    |> enter_page(next)
-    |> start_idle_timer()
-    |> slide(old, next, from, to)
+  defp pull(%{overlay: nil, drag: nil, moving: nil}, dy) when dy < 0,
+    do: %{kind: :inventory, at: Kernel.min(travel(dy) / @inventory_travel, 1)}
+
+  defp pull(%{overlay: :sky}, dy) when dy < 0,
+    do: %{kind: :sky, at: Kernel.max(1 - travel(dy) / @sky_travel, 0)}
+
+  defp pull(%{overlay: :inventory}, dy) when dy > 0,
+    do: %{kind: :inventory, at: Kernel.max(1 - travel(dy) / @inventory_travel, 0)}
+
+  defp pull(_state, _dy), do: nil
+
+  defp settle_pull(state, kind, from, to) do
+    n = state.transitions + 1
+    travel = if kind == :sky, do: 454, else: 300
+    ms = Kernel.max(round(@transition_ms * abs(to - from) * travel / 454), 120)
+    Process.send_after(self(), {:pulled, n}, ms + 80)
+    vmoving = %{kind: kind, from: from, to: to, n: n, ms: ms}
+    Viewport.rerender(%{state | vmoving: vmoving, transitions: n})
   end
 
-  defp slide(state, top, below, from, to) do
+  # Opens `app`, putting it first in the recents.
+  defp open_app(%{app: app} = state, app), do: state
+
+  defp open_app(state, app) do
+    state
+    |> leave_page(state.app)
+    |> Map.merge(%{app: app, recents: [app | List.delete(state.recents, app)]})
+    |> enter_page(app)
+    |> start_idle_timer()
+  end
+
+  # Switches to the app `direction` points to (negative is newer), sliding
+  # it in over the current one from `from`.
+  defp turn(state, direction, from) do
+    case neighbour(state, direction) do
+      nil ->
+        Viewport.rerender(state)
+
+      next ->
+        old = state.app
+
+        state
+        |> leave_page(old)
+        |> Map.put(:app, next)
+        |> enter_page(next)
+        |> start_idle_timer()
+        |> slide(old, next, side(direction), from, 0)
+    end
+  end
+
+  defp swipe(state, direction), do: turn(state, direction, away(side(direction)))
+
+  # A drag that never got past the dead zone has nothing to slide back.
+  defp slide(state, _base, _incoming, _side, at, at), do: Viewport.rerender(state)
+
+  defp slide(state, base, incoming, side, from, to) do
     n = state.transitions + 1
-    ms = Kernel.max(round(@transition_ms * abs(to - from) / @slide), 120)
-    Process.send_after(self(), {:moved, n}, ms + 80)
-    moving = %{top: top, below: below, from: from, to: to, n: n}
+    Process.send_after(self(), {:moved, n}, settle_ms(from, to) + 80)
+    moving = %{base: base, incoming: incoming, side: side, from: from, to: to, n: n}
     Viewport.rerender(%{state | moving: moving, transitions: n})
+  end
+
+  defp cancel_vdrag_timer(%{vdrag_timer: nil} = state), do: state
+
+  defp cancel_vdrag_timer(state) do
+    Process.cancel_timer(state.vdrag_timer)
+    %{state | vdrag_timer: nil}
   end
 
   defp cancel_drag_timer(%{drag_timer: nil} = state), do: state
@@ -390,13 +838,28 @@ defmodule HelloWatch.Clock do
   end
 
   # Drags queue up while a frame renders; only the newest position matters.
-  defp latest_drag(dx) do
+  defp latest_drag(tag, d) do
     receive do
-      {:drag, next} -> latest_drag(next)
+      {^tag, next} -> latest_drag(tag, next)
     after
-      0 -> dx
+      0 -> d
     end
   end
+
+  defp safely(fun) do
+    fun.()
+  catch
+    kind, reason -> {:error, {kind, reason}}
+  end
+
+  # The switches are read beside the viewport: the tailscale CLI takes a
+  # moment on this CPU. The answer comes back as a message.
+  defp read_controls(%{controls_read: nil} = state) do
+    task = Task.async(fn -> safely(&Controls.read/0) end)
+    %{state | controls_read: task.ref}
+  end
+
+  defp read_controls(state), do: state
 
   defp sleep(state) do
     if state.idle_timer, do: Process.cancel_timer(state.idle_timer)
@@ -412,7 +875,7 @@ defmodule HelloWatch.Clock do
     state =
       %{state | on: true}
       |> read_power(restart: true)
-      |> enter_page(state.page)
+      |> enter_page(state.app)
       |> start_idle_timer()
       |> ensure_ticking()
       |> Viewport.rerender()
@@ -484,14 +947,14 @@ defmodule HelloWatch.Clock do
     %{state | dimmed: false}
   end
 
-  defp enter_page(state, @sensors), do: stream(state, @sensor_stream)
-  defp enter_page(state, @tailscale), do: state |> enter_page(0) |> read_tailscale()
+  defp enter_page(state, :sensors), do: stream(state, @sensor_stream)
+  defp enter_page(state, :tailscale), do: state |> enter_page(:clock) |> read_tailscale()
   defp enter_page(%{sensor_port: nil} = state, _), do: stream(state, @idle_stream)
   defp enter_page(state, _), do: state
 
   # Drop the last readings on the way out: they would otherwise sit on the page
   # looking live when the stream that produced them is no longer running.
-  defp leave_page(state, @sensors), do: %{stream(state, @idle_stream) | sensors: %{}}
+  defp leave_page(state, :sensors), do: %{stream(state, @idle_stream) | sensors: %{}}
   defp leave_page(state, _), do: state
 
   # tailscale CLI calls take a moment on this CPU, so they run beside the
@@ -555,7 +1018,7 @@ defmodule HelloWatch.Clock do
     |> update_in([:sensor_errors], &Map.delete(&1, sensor))
   end
 
-  defp queue_render(%{page: @sensors, on: true, render_timer: nil} = state),
+  defp queue_render(%{app: :sensors, on: true, render_timer: nil} = state),
     do: %{state | render_timer: Process.send_after(self(), :refresh, 200)}
 
   defp queue_render(state), do: state

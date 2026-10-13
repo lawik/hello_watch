@@ -8,6 +8,8 @@ defmodule HelloWatch.MixProject do
   def project do
     [
       app: @app,
+      # The NervesHub product name, written into the firmware metadata.
+      name: "nerves-stuff",
       version: @version,
       elixir: "~> 1.18",
       archives: [nerves_bootstrap: "~> 1.15"],
@@ -48,7 +50,11 @@ defmodule HelloWatch.MixProject do
 
       # UI: Emerge renders the watch face and pages, on the CPU into the
       # framebuffer on the watch (see UI.md) or in a window on the host.
-      {:emerge, "~> 0.4.2"},
+      # Tracks the frame pacing branch for `drm_animation_pacing: :commit`
+      # (see HelloWatch.Clock). It has no precompiled NIFs, so it builds from
+      # source, which needs rustler.
+      {:emerge, git: "git@github.com:lawik/emerge.git", branch: "feat/drm-animation-pacing"},
+      {:rustler, "~> 0.38.0", runtime: false},
 
       # Runs tailscaled (see HelloWatch.Tailscale).
       {:muontrap, "~> 1.8"},
@@ -63,6 +69,7 @@ defmodule HelloWatch.MixProject do
       {:nerves_pack, "~> 0.7.1", targets: @all_targets},
       {:circuits_gpio, "~> 2.1", targets: @all_targets},
       {:circuits_spi, "~> 2.0", targets: @all_targets},
+      {:nerves_hub_link, "~> 2.12", targets: @all_targets},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -90,15 +97,18 @@ defmodule HelloWatch.MixProject do
   end
 
   # deps/emerge/priv collects Emerge's NIF for every platform and variant it
-  # was compiled for (the host's for tests, the watch's minimal raster build
-  # selected by `compiled_backends: []` in config/target.exs), each 15-25 MB.
-  # Keep only the watch's in the firmware.
+  # was compiled for (the host's for tests, the watch's DRM/OpenGL or minimal
+  # raster build, selected by `compiled_backends` in config/target.exs), each
+  # 15-25 MB. Keep only the one the watch uses in the firmware.
   defp keep_target_nif(%Mix.Release{} = release) do
     if Mix.target() != :host do
+      variant =
+        if Application.get_env(:emerge, :compiled_backends, []) == [], do: "raster", else: "drm"
+
       release.path
       |> Path.join("lib/emerge-*/priv/native/libemerge_skia-*.so")
       |> Path.wildcard()
-      |> Enum.reject(&String.ends_with?(&1, "-aarch64-unknown-linux-gnu--raster.so"))
+      |> Enum.reject(&String.ends_with?(&1, "-aarch64-unknown-linux-gnu--#{variant}.so"))
       |> Enum.each(&File.rm!/1)
     end
 

@@ -1,17 +1,14 @@
 defmodule HelloWatch.Clock.Pages do
   @moduledoc """
-  The pages beside the face, each in its own colour: a title between two
-  sparkles, a body, and a row of little moons for page dots with the current
-  page's full. `render/3` lays out rows of text; `page/3` takes any body.
+  The views beside the face: the cloudy backdrop, a title between two
+  sparkles, and a body. `render/3` lays out rows of text; `page/3` takes any
+  body.
   """
   use Emerge.UI
 
-  alias HelloWatch.Clock.{Moon, Palette}
+  alias HelloWatch.Clock.{Backdrop, Moon, Palette}
 
   @size 454
-  @pages 5
-  # Page 0 is the face, which paints its own sky.
-  @colors {:night, :deep, :ley, :plum, :wine}
 
   # The panel is round, so the body starts past the title and is inset from
   # the left curve; rows narrow near the top and bottom.
@@ -21,30 +18,31 @@ defmodule HelloWatch.Clock.Pages do
   @max_rows 11
 
   @doc """
-  A page of `rows`: `{label, value}` pairs, plain strings, or `""` for a
-  gap.
+  A view of `rows`: `{label, value}` pairs, plain strings, or `""` for a
+  gap. `view` picks the backdrop's tint.
   """
-  def render(title, rows, page) do
+  def render(title, rows, view) do
     body =
       column(
         [padding_each(@body_top, 0, 0, @body_left), spacing(5)],
         rows |> Enum.take(@max_rows) |> Enum.map(&row_element/1)
       )
 
-    page(title, body, page)
+    page(title, body, view)
   end
 
-  @doc "A page with `body` laid over the whole 454x454 panel."
-  def page(title, body, page) do
+  @doc "A flat colour for areas next to a view, as it slides in."
+  def background(_view), do: Backdrop.color()
+
+  @doc "A view with `body` laid over the whole 454x454 panel."
+  def page(title, body, view) do
     el(
       [
         width(px(@size)),
         height(px(@size)),
-        Background.color(Palette.c(elem(@colors, page))),
-        Nearby.in_front(title(title)),
-        Nearby.in_front(body),
-        Nearby.in_front(moons(page))
-      ],
+        Backdrop.background()
+      ] ++
+        Enum.map(Backdrop.layers(view) ++ [title(title), body], &Nearby.in_front/1),
       none()
     )
   end
@@ -89,20 +87,6 @@ defmodule HelloWatch.Clock.Pages do
     el(
       [Font.family("Alegreya Sans"), Font.size(19), Font.color(Palette.c(:bone))],
       text(String.slice(to_string(line), 0, 30))
-    )
-  end
-
-  defp moons(selected) do
-    el(
-      [width(px(@size)), padding_each(400, 0, 0, 0)],
-      row(
-        [center_x(), spacing(10)],
-        for index <- 0..(@pages - 1) do
-          if index == selected,
-            do: Moon.disc(0.5, 14, attrs: [center_y(), Border.glow(Palette.c(:lilac, 0.5), 4)]),
-            else: Moon.disc(0.13, 11, lit: :dusk, attrs: [center_y()])
-        end
-      )
     )
   end
 end

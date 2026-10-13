@@ -35,6 +35,21 @@ defmodule HelloWatch.ClockTest do
     end
   end
 
+  # Opens `app` from the inventory, as a finger would.
+  @apps [:clock, :battery, :network, :sensors, :moon, :tailscale]
+
+  defp open(pid, app) do
+    send(pid, {:vdrag, -200})
+    send(pid, {:vrelease, -200})
+    Process.sleep(600)
+    assert %{overlay: :inventory} = :sys.get_state(pid)
+
+    angle = 2 * :math.pi() * Enum.find_index(@apps, &(&1 == app)) / length(@apps)
+    send(pid, {:tap, {227 + 124 * :math.sin(angle), 227 - 124 * :math.cos(angle)}})
+    Process.sleep(600)
+    assert %{overlay: nil, app: ^app} = :sys.get_state(pid)
+  end
+
   # The read is asynchronous; poll until it lands.
   defp eventually(fun, tries \\ 50) do
     case fun.() do
@@ -60,6 +75,16 @@ defmodule HelloWatch.ClockTest do
       {:emerge_skia_frame, _} -> frames(count + 1)
     after
       0 -> count
+    end
+  end
+
+  # How many different pictures have arrived.
+  defp distinct_frames(seen \\ MapSet.new()) do
+    receive do
+      {:emerge_skia_frame, %VideoInterop.Frame{storage: %{data: data}}} ->
+        distinct_frames(MapSet.put(seen, :erlang.md5(data)))
+    after
+      0 -> MapSet.size(seen)
     end
   end
 
@@ -127,53 +152,17 @@ defmodule HelloWatch.ClockTest do
       assert %{on: true} = Clock.status()
     end
 
-    test "a drag moves the page with the finger and turns it only past halfway", %{clock: pid} do
-      flush_frames()
-      send(pid, {:drag, -100})
-      assert %{drag: -100, page: 0} = :sys.get_state(pid)
-      # The battery page shows beneath, at the right edge.
-      assert pixel(next_frame(), 440, 227) == Palette.value(:deep)
+    test "the inventory opens apps, and they become the recents", %{clock: pid} do
+      open(pid, :battery)
+      assert %{page: :battery, recents: [:battery, :clock], overlay: nil} = Clock.status()
+      open(pid, :network)
+      assert %{recents: [:network, :battery, :clock]} = Clock.status()
 
-      # Not far enough: it springs back.
-      send(pid, {:release, -100})
-      assert %{drag: nil, moving: %{to: 0}} = :sys.get_state(pid)
-      assert %{page: :clock} = Clock.status()
+      # Reopening one moves it back to the front.
+      open(pid, :clock)
+      assert %{page: :clock, recents: [:clock, :network, :battery]} = Clock.status()
 
-      # A drag whose release never comes settles by itself.
-      send(pid, {:drag, -60})
-      Process.sleep(1100)
-      assert %{drag: nil, page: 0} = :sys.get_state(pid)
-
-      send(pid, {:drag, -300})
-      send(pid, {:release, -300})
-      assert %{page: :battery} = Clock.status()
-      # It slides the rest of the way off over several frames.
-      Process.sleep(250)
-      assert frames() >= 3
-      Process.sleep(400)
-      assert %{moving: nil} = :sys.get_state(pid)
-      assert pixel(latest_frame(), 227, 400) == Palette.value(:deep)
-    end
-
-    test "swipes page through the battery, network, sensor and Tailscale pages", %{
-      clock: pid,
-      frame: face
-    } do
-      send(pid, {:swipe, :left})
-      assert %{page: :battery} = Clock.status()
-      send(pid, {:swipe, :left})
-      assert %{page: :network} = Clock.status()
-
-      Process.sleep(700)
-      network = latest_frame()
-      assert %{moving: nil} = :sys.get_state(pid)
-      # The network page's own colour, below its rows.
-      assert pixel(network, 227, 330) == Palette.value(:ley)
-
-      send(pid, {:swipe, :left})
-      assert %{page: :sensors} = Clock.status()
-      send(pid, {:swipe, :left})
-      assert %{page: :tailscale} = Clock.status()
+      open(pid, :tailscale)
       # Tailscale doesn't run on the host.
       assert eventually(fn -> :sys.get_state(pid).tailscale end) == %{
                state: "Unavailable",
@@ -183,12 +172,163 @@ defmodule HelloWatch.ClockTest do
                ip: nil,
                tailnet: nil
              }
+    end
 
+    test "the open inventory is drawn over the face", %{clock: pid} do
+      send(pid, {:vdrag, -200})
+      send(pid, {:vrelease, -200})
+      Process.sleep(600)
+      frame = latest_frame()
+
+      # Its dark circle covers the middle of the panel.
+      {r, g, b} = pixel(frame, 227, 250)
+      assert r < 12 and g < 12 and b < 24, "the inventory's darkness, got #{inspect({r, g, b})}"
+    end
+
+    test "a sideways drag pulls the previous app in over this one, switching past halfway", %{
+      clock: pid
+    } do
+      open(pid, :battery)
+      flush_frames()
+
+      # The battery is the newest app: there's nothing to pull in from the right.
+      send(pid, {:drag, -100})
+      assert %{drag: nil} = :sys.get_state(pid)
+
+      # Right brings back the clock, over the battery, which stays put.
+      send(pid, {:drag, 100})
+      assert %{drag: 100} = :sys.get_state(pid)
+      assert byte_size(next_frame()) == @frame_bytes
+
+      # Not far enough: it slides back out.
+      send(pid, {:release, 100})
+
+      assert %{drag: nil, moving: %{base: :battery, incoming: :clock, to: to}} =
+               :sys.get_state(pid)
+
+      assert to < 0
+      assert %{page: :battery} = Clock.status()
+
+      # A drag whose release never comes settles by itself.
+      send(pid, {:drag, 60})
+      Process.sleep(1100)
+      assert %{drag: nil, app: :battery} = :sys.get_state(pid)
+
+      flush_frames()
+      send(pid, {:drag, 300})
+      send(pid, {:release, 300})
+      assert %{page: :clock, recents: [:battery, :clock]} = Clock.status()
+      # It slides the rest of the way in over several frames.
+      Process.sleep(250)
+      assert frames() >= 3
+      Process.sleep(400)
+      assert %{moving: nil} = :sys.get_state(pid)
+
+      # And left goes forward to the battery again.
       send(pid, {:swipe, :left})
-      assert %{page: :clock} = Clock.status()
-      send(pid, {:swipe, :right})
-      assert %{page: :tailscale} = Clock.status()
-      refute network == face
+      assert %{page: :battery} = Clock.status()
+    end
+
+    test "pulling down shows the sky, and up closes it; short pulls spring back", %{clock: pid} do
+      send(pid, {:vdrag, 200})
+      assert %{vdrag: %{kind: :sky}} = :sys.get_state(pid)
+      send(pid, {:vrelease, 260})
+      Process.sleep(700)
+      assert %{overlay: :sky} = Clock.status()
+
+      # Sideways drags do nothing in the sky; a tap away from the stars
+      # flips nothing. (The host's own rfkill switches are real: tests never
+      # tap a star.)
+      send(pid, {:drag, -300})
+      send(pid, {:tap, {227, 430}})
+      assert %{drag: nil, control_task: nil} = :sys.get_state(pid)
+
+      send(pid, {:vdrag, -150})
+      send(pid, {:vrelease, -300})
+      Process.sleep(700)
+      assert %{overlay: nil} = Clock.status()
+
+      send(pid, {:vdrag, 60})
+      send(pid, {:vrelease, 60})
+      Process.sleep(500)
+      assert %{overlay: nil, vmoving: nil} = :sys.get_state(pid)
+
+      # Up opens the inventory, and down closes it.
+      send(pid, {:vdrag, -200})
+      send(pid, {:vrelease, -200})
+      Process.sleep(600)
+      assert %{overlay: :inventory} = Clock.status()
+      send(pid, {:vdrag, 200})
+      send(pid, {:vrelease, 200})
+      Process.sleep(600)
+      assert %{overlay: nil, page: :clock} = Clock.status()
+    end
+
+    test "a pull opens past 40% when let go, and springs back short of it", %{clock: pid} do
+      # 40% of the inventory's travel is just over 134 px, past the dead zone.
+      send(pid, {:vdrag, -130})
+      send(pid, {:vrelease, -130})
+      Process.sleep(500)
+      assert %{overlay: nil, vmoving: nil} = :sys.get_state(pid)
+
+      send(pid, {:vdrag, -140})
+      send(pid, {:vrelease, -140})
+      Process.sleep(500)
+      assert %{overlay: :inventory, vmoving: nil} = :sys.get_state(pid)
+
+      # Closing is the same the other way: it stays open short of 40%.
+      send(pid, {:vdrag, 130})
+      send(pid, {:vrelease, 130})
+      Process.sleep(500)
+      assert %{overlay: :inventory, vmoving: nil} = :sys.get_state(pid)
+
+      send(pid, {:vdrag, 140})
+      send(pid, {:vrelease, 140})
+      Process.sleep(500)
+      assert %{overlay: nil, vmoving: nil} = :sys.get_state(pid)
+    end
+
+    test "a pull let go eases the rest of the way over several frames", %{clock: pid} do
+      # The first pull mounts nothing new: the inventory is there, closed.
+      send(pid, {:vdrag, -180})
+      Process.sleep(200)
+      flush_frames()
+      send(pid, {:vrelease, -180})
+      Process.sleep(400)
+      assert distinct_frames() >= 3
+      assert %{overlay: :inventory} = :sys.get_state(pid)
+
+      Process.sleep(200)
+      send(pid, {:vdrag, 200})
+      Process.sleep(200)
+      flush_frames()
+      send(pid, {:vrelease, 200})
+      Process.sleep(400)
+      assert distinct_frames() >= 3
+      assert %{overlay: nil} = :sys.get_state(pid)
+    end
+
+    test "a pull whose release never comes settles by itself", %{clock: pid} do
+      send(pid, {:vdrag, -200})
+      assert %{vdrag: %{kind: :inventory}} = :sys.get_state(pid)
+      Process.sleep(1100)
+      assert %{vdrag: nil} = :sys.get_state(pid)
+      Process.sleep(500)
+      assert %{overlay: :inventory, vmoving: nil} = :sys.get_state(pid)
+
+      send(pid, {:vdrag, 60})
+      Process.sleep(1600)
+      assert %{overlay: :inventory, vdrag: nil, vmoving: nil} = :sys.get_state(pid)
+
+      # A pull that keeps moving doesn't time out.
+      send(pid, {:vdrag, 100})
+      Process.sleep(700)
+      send(pid, {:vdrag, 250})
+      Process.sleep(700)
+      assert %{vdrag: %{kind: :inventory}} = :sys.get_state(pid)
+      send(pid, {:vrelease, 250})
+      Process.sleep(500)
+      assert %{overlay: nil, vdrag: nil, vmoving: nil} = :sys.get_state(pid)
     end
 
     test "ignores swipes while the screen is off", %{clock: pid} do
@@ -324,7 +464,7 @@ defmodule HelloWatch.ClockTest do
              Button.decode(first <> rest <> event.(2) <> event.(0))
   end
 
-  test "recognizes taps and horizontal multitouch drags, and ignores vertical movement" do
+  test "recognizes taps, and drags locked to an axis" do
     events = [
       {3, 57, 4},
       {3, 53, 350},
@@ -368,6 +508,18 @@ defmodule HelloWatch.ClockTest do
              Touch.gesture(restarted)
 
     tap = [{1, 330, 1}, {3, 53, 200}, {3, 54, 100}, {0, 0, 0}, {3, 53, 210}, {1, 330, 0}]
-    assert {[:tap], _state} = Touch.gesture(tap)
+    assert {[{:tap, {200, 100}}], _state} = Touch.gesture(tap)
+
+    pull = [
+      {1, 330, 1},
+      {3, 53, 200},
+      {3, 54, 100},
+      {0, 0, 0},
+      {3, 54, 160},
+      {0, 0, 0},
+      {1, 330, 0}
+    ]
+
+    assert {[{:vdrag, 60}, {:vrelease, 60}], _state} = Touch.gesture(pull)
   end
 end

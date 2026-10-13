@@ -25,3 +25,5 @@ erl_crash.dump
 
 # Raw firmware image from mix firmware.image
 /hello_watch.img
+# NervesHub credentials; see .envrc.example.
+/.envrc

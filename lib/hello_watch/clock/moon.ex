@@ -29,7 +29,7 @@ defmodule HelloWatch.Clock.Moon do
   @doc """
   A moon `size` px across at `phase`. Waxing moons are lit on the right, as
   seen from the northern hemisphere. Options: `:lit` and `:dark` palette
-  names, and `:attrs` for the moon's own element (position, glow).
+  names, and `:attrs` for the moon's own element.
   """
   def disc(phase, size, opts \\ []) do
     lit = Palette.c(Keyword.get(opts, :lit, :bone))
@@ -95,34 +95,19 @@ defmodule HelloWatch.Clock.Moon do
     )
   end
 
-  @doc "A four-pointed sparkle `size` px across, tilted by `tilt` degrees."
+  @doc """
+  A four-pointed sparkle `size` px across, tilted by `tilt` degrees. An SVG
+  tinted through the palette, so it has no layers to escape a clip.
+  """
   def sparkle(size, color, attrs \\ [], tilt \\ 0) do
-    ray = fn long, short ->
-      el(
-        [
-          width(px(long)),
-          height(px(short)),
-          center_x(),
-          center_y(),
-          Border.rounded(Kernel.min(long, short) / 2),
-          Background.color(Palette.c(color))
-        ],
-        none()
-      )
-    end
-
-    thickness = Kernel.max(size / 7, 1.5)
-
-    el(
+    svg(
       [
         width(px(size)),
         height(px(size)),
         Transform.rotate(tilt),
-        Nearby.in_front(ray.(size, thickness)),
-        Nearby.in_front(ray.(thickness, size)),
-        Nearby.in_front(ray.(size / 2.6, size / 2.6))
+        Svg.color(Palette.c(color))
       ] ++ attrs,
-      none()
+      "images/sparkle.svg"
     )
   end
 end

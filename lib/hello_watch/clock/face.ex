@@ -10,7 +10,7 @@ defmodule HelloWatch.Clock.Face do
   """
   use Emerge.UI
 
-  alias HelloWatch.Clock.{Moon, Palette}
+  alias HelloWatch.Clock.{Backdrop, Moon, Palette}
 
   @size 454
   @center div(@size, 2)
@@ -48,21 +48,21 @@ defmodule HelloWatch.Clock.Face do
     hours = rem(time.hour, 12) + time.minute / 60
 
     layers =
-      [charge(battery)] ++
+      Backdrop.layers(:clock) ++
+        [charge(battery)] ++
         stars() ++
         markers(moon) ++
         [
           day(time),
           hand(hours / 12, 9, 14, 104, :bone, tip(:lilac, 9)),
-          hand(time.minute / 60, 5, 20, 156, :bone, Moon.sparkle(18, :bone)),
-          hub()
-        ]
+          hand(time.minute / 60, 5, 20, 156, :bone, {Moon.sparkle(18, :bone), 18})
+        ] ++ hub()
 
     el(
       [
         width(px(@size)),
         height(px(@size)),
-        Background.color(Palette.gradient([:night, :midnight], 180))
+        Backdrop.background()
       ] ++ Enum.map(layers, &Nearby.in_front/1),
       none()
     )
@@ -95,7 +95,10 @@ defmodule HelloWatch.Clock.Face do
   end
 
   # The twelve phases around the dial, full at twelve and new at six; the
-  # one closest to the real moon is bigger and glows like a candle.
+  # one closest to the real moon is bigger, in a candle-coloured halo.
+  #
+  # Glows here are halo discs, not Border.glow: Emerge doesn't clip shadows
+  # to a rounded ancestor, and pages are clipped to arcs while they slide.
   defp markers(moon) do
     tonight = rem(round(moon * 12) + 6, 12)
 
@@ -107,16 +110,12 @@ defmodule HelloWatch.Clock.Face do
     moons =
       for hour <- 0..11 do
         phase = rem(hour + 6, 12) / 12
-
-        {size, attrs} =
-          if hour == tonight,
-            do: {30, [Border.glow(Palette.c(:candle, 0.55), 6)]},
-            else: {20, []}
-
-        on_radius(hour / 12, @marker_radius, size, Moon.disc(phase, size, attrs: attrs))
+        size = if hour == tonight, do: 30, else: 20
+        on_radius(hour / 12, @marker_radius, size, Moon.disc(phase, size))
       end
 
-    minute_dots ++ moons
+    halo = on_radius(tonight / 12, @marker_radius, 42, halo(42, :candle, 0.16))
+    minute_dots ++ [halo] ++ moons
   end
 
   defp dot_attrs(size, color),
@@ -134,9 +133,12 @@ defmodule HelloWatch.Clock.Face do
     place(child, @center + radius * :math.sin(angle), @center - radius * :math.cos(angle), size)
   end
 
+  # Positioned by padding rather than a transform: Emerge doesn't clip the
+  # layers of a transformed element to a rounded ancestor, and pages are
+  # clipped to arcs while they slide in.
   defp place(child, x, y, size) do
     el(
-      [Transform.move_x(x - size / 2), Transform.move_y(y - size / 2)],
+      [padding_each(round(y - size / 2), 0, 0, round(x - size / 2))],
       child
     )
   end
@@ -155,41 +157,54 @@ defmodule HelloWatch.Clock.Face do
 
   defp day(_time), do: none()
 
-  # `back` is how far the hand reaches past the centre; `tip` sits at its end.
-  defp hand(turn, thickness, back, length, color, tip) do
-    el(
-      [width(px(@size)), height(px(@size)), Transform.rotate(turn * 360)],
-      el(
-        [
-          width(px(thickness)),
-          height(px(length + back)),
-          Transform.move_x(@center - thickness / 2),
-          Transform.move_y(@center - length),
-          Background.color(Palette.c(color)),
-          Border.rounded(thickness / 2),
-          Nearby.above(el([center_x(), Transform.move_y(tip_offset(tip))], tip))
-        ],
-        none()
-      )
+  # `back` is how far the hand reaches past the centre; `tip` sits at its
+  # end. A full-face column turned about the centre, with the tip stacked on
+  # the bar rather than layered over it, for the same clipping reason as
+  # place/4.
+  defp hand(turn, thickness, back, length, color, {tip, tip_size}) do
+    column(
+      [
+        width(px(@size)),
+        height(px(@size)),
+        padding_each(@center - length - tip_size + 4, 0, 0, 0),
+        spacing(-4),
+        Transform.rotate(turn * 360)
+      ],
+      [
+        el([center_x()], tip),
+        el(
+          [
+            center_x(),
+            width(px(thickness)),
+            height(px(length + back)),
+            Background.color(Palette.c(color)),
+            Border.rounded(thickness / 2)
+          ],
+          none()
+        )
+      ]
     )
   end
 
-  defp tip(color, size), do: el(dot_attrs(size, color), none())
+  defp tip(color, size), do: {el(dot_attrs(size, color), none()), size}
 
-  # Tips overlap the hand's end by half their height.
-  defp tip_offset(_tip), do: 8
-
-  # A crescent moon at the hub, the hands' pivot.
+  # A crescent moon at the hub, the hands' pivot, in a faint halo.
   defp hub do
-    place(
-      Moon.disc(0.2, 18,
-        lit: :candle,
-        dark: :night,
-        attrs: [Border.glow(Palette.c(:candle, 0.4), 3)]
-      ),
-      @center,
-      @center,
-      18
+    [
+      place(halo(28, :candle, 0.25), @center, @center, 28),
+      place(Moon.disc(0.2, 18, lit: :candle, dark: :night), @center, @center, 18)
+    ]
+  end
+
+  defp halo(size, color, alpha) do
+    el(
+      [
+        width(px(size)),
+        height(px(size)),
+        Border.rounded(size / 2),
+        Background.color(Palette.c(color, alpha))
+      ],
+      none()
     )
   end
 

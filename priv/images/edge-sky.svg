@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="454" height="220" viewBox="0 0 454 220">
+  <!-- Soft cloud puffs along the sky's lower edge, 90 px from the top, so the sky pulled down over a view ends in cloud rather than a line. Tinted with Svg.color. -->
+  <defs>
+    <radialGradient id="c0" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.488"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.220"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c1" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.489"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.220"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c2" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.349"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.157"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c3" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.356"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.160"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c4" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.328"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.147"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c5" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.342"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.154"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="-10.0" cy="101.4" rx="77.9" ry="50.5" fill="url(#c0)"/>
+  <ellipse cx="77.4" cy="90.9" rx="87.5" ry="44.3" fill="url(#c1)"/>
+  <ellipse cx="173.2" cy="91.0" rx="86.8" ry="45.4" fill="url(#c2)"/>
+  <ellipse cx="265.5" cy="82.9" rx="76.4" ry="38.4" fill="url(#c3)"/>
+  <ellipse cx="355.3" cy="101.5" rx="82.5" ry="43.9" fill="url(#c4)"/>
+  <ellipse cx="444.8" cy="103.9" rx="62.1" ry="31.0" fill="url(#c5)"/>
+</svg>

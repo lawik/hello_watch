@@ -28,8 +28,7 @@ defmodule HelloWatch.Clock.TailscalePage do
           [
             center_x(),
             Background.color(Palette.c(:white)),
-            Border.rounded(10),
-            Border.glow(Palette.c(:lilac, 0.45), 8)
+            Border.rounded(10)
           ],
           qr_code(url)
         ),

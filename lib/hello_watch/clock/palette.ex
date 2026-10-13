@@ -29,6 +29,12 @@ defmodule HelloWatch.Clock.Palette do
     cork: {160, 104, 62},
     moss: {120, 222, 150},
     rose: {244, 116, 158},
+    # The dark blue every backdrop starts from, lighter at the top.
+    abyss: {5, 8, 26},
+    twilight: {14, 22, 58},
+    # Cloud tints.
+    blue: {96, 132, 240},
+    teal: {84, 196, 214},
     # The pages, each its own colour, sweeping in like a waxing moon.
     deep: {12, 20, 48},
     ley: {8, 38, 34},

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="454" height="230" viewBox="0 0 454 230">
+  <!-- A mist over the sky's lower edge, which is 70 px from the top of this: thickest on the edge, so it hides the line, and thinning out both ways. Tinted with Svg.color. -->
+  <defs>
+    <linearGradient id="m" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#fff" stop-opacity="0"/>
+      <stop offset="0.16" stop-color="#fff" stop-opacity="0.6"/>
+      <stop offset="0.304" stop-color="#fff" stop-opacity="0.95"/>
+      <stop offset="0.45" stop-color="#fff" stop-opacity="0.55"/>
+      <stop offset="0.7" stop-color="#fff" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </linearGradient>
+  </defs>
+  <rect x="0" y="0" width="454" height="230" fill="url(#m)"/>
+</svg>

@@ -1,0 +1,281 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="460" height="494" viewBox="0 0 460 494">
+  <!-- A front of soft cloud puffs along an arc of radius 240 px, drawn over a sliding view's leading edge to soften it. The arc's rightmost point is 350 px from the left; the band starts 20 px above the panel. Puffs stay 110 px clear of the sides so none is cut off. -->
+  <defs>
+    <radialGradient id="c0" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.475"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.214"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c1" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.176"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.079"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c2" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.478"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.215"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c3" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.202"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.091"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c4" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.410"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.185"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c5" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.222"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.100"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c6" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.439"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.198"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c7" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.437"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.197"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c8" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.467"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.210"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c9" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.383"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.172"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c10" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.516"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.232"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c11" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.510"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.230"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c12" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.227"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.102"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c13" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.416"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.187"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c14" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.470"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.211"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c15" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.211"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.095"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c16" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.529"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.238"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c17" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.214"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.096"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c18" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.436"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.196"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c19" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.352"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.159"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c20" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.212"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.095"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c21" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.421"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.189"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c22" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.400"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.180"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c23" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.186"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.084"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c24" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.504"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.227"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c25" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.181"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.081"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c26" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.490"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.220"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c27" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.233"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.105"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c28" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.527"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.237"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c29" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.203"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.091"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c30" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.511"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.230"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c31" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.404"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.182"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c32" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.191"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.086"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c33" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.547"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.246"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c34" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.172"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.077"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c35" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.418"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.188"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c36" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.179"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.080"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c37" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.529"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.238"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c38" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.483"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.217"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c39" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.522"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.235"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c40" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.170"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.076"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c41" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.511"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.230"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c42" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.404"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.182"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c43" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.375"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.169"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c44" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.235"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.106"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c45" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.479"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.216"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="110.7" cy="-21.6" rx="32.4" ry="24.9" fill="url(#c0)"/>
+  <ellipse cx="95.8" cy="-13.3" rx="44.7" ry="34.8" fill="url(#c1)"/>
+  <ellipse cx="109.5" cy="-0.1" rx="42.0" ry="33.9" fill="url(#c2)"/>
+  <ellipse cx="85.8" cy="3.2" rx="61.1" ry="47.5" fill="url(#c3)"/>
+  <ellipse cx="167.4" cy="18.9" rx="38.9" ry="30.1" fill="url(#c4)"/>
+  <ellipse cx="146.6" cy="15.3" rx="54.1" ry="42.1" fill="url(#c5)"/>
+  <ellipse cx="232.6" cy="35.6" rx="42.8" ry="30.6" fill="url(#c6)"/>
+  <ellipse cx="251.9" cy="54.5" rx="34.4" ry="23.2" fill="url(#c7)"/>
+  <ellipse cx="274.8" cy="72.5" rx="36.3" ry="28.1" fill="url(#c8)"/>
+  <ellipse cx="300.4" cy="99.6" rx="44.3" ry="33.1" fill="url(#c9)"/>
+  <ellipse cx="311.8" cy="118.0" rx="36.3" ry="32.9" fill="url(#c10)"/>
+  <ellipse cx="326.2" cy="137.6" rx="23.8" ry="22.8" fill="url(#c11)"/>
+  <ellipse cx="304.1" cy="127.6" rx="41.0" ry="31.9" fill="url(#c12)"/>
+  <ellipse cx="332.5" cy="147.2" rx="30.6" ry="22.5" fill="url(#c13)"/>
+  <ellipse cx="346.8" cy="172.3" rx="29.1" ry="28.1" fill="url(#c14)"/>
+  <ellipse cx="321.6" cy="172.7" rx="50.5" ry="39.3" fill="url(#c15)"/>
+  <ellipse cx="349.0" cy="187.6" rx="33.3" ry="22.5" fill="url(#c16)"/>
+  <ellipse cx="321.7" cy="190.2" rx="40.5" ry="31.5" fill="url(#c17)"/>
+  <ellipse cx="348.8" cy="213.9" rx="36.0" ry="28.7" fill="url(#c18)"/>
+  <ellipse cx="356.6" cy="224.7" rx="32.6" ry="25.6" fill="url(#c19)"/>
+  <ellipse cx="325.7" cy="214.9" rx="46.1" ry="35.9" fill="url(#c20)"/>
+  <ellipse cx="352.0" cy="243.1" rx="30.4" ry="22.7" fill="url(#c21)"/>
+  <ellipse cx="342.4" cy="265.5" rx="33.0" ry="22.3" fill="url(#c22)"/>
+  <ellipse cx="326.0" cy="259.8" rx="40.1" ry="31.2" fill="url(#c23)"/>
+  <ellipse cx="349.3" cy="277.5" rx="31.4" ry="26.4" fill="url(#c24)"/>
+  <ellipse cx="324.6" cy="284.6" rx="47.6" ry="37.0" fill="url(#c25)"/>
+  <ellipse cx="340.8" cy="292.0" rx="38.5" ry="31.6" fill="url(#c26)"/>
+  <ellipse cx="325.9" cy="292.4" rx="57.0" ry="44.3" fill="url(#c27)"/>
+  <ellipse cx="335.4" cy="311.3" rx="42.8" ry="32.3" fill="url(#c28)"/>
+  <ellipse cx="323.1" cy="305.6" rx="58.1" ry="45.2" fill="url(#c29)"/>
+  <ellipse cx="341.1" cy="325.0" rx="36.1" ry="31.7" fill="url(#c30)"/>
+  <ellipse cx="321.2" cy="346.7" rx="36.5" ry="26.1" fill="url(#c31)"/>
+  <ellipse cx="306.5" cy="347.6" rx="47.1" ry="36.6" fill="url(#c32)"/>
+  <ellipse cx="307.8" cy="375.9" rx="34.4" ry="23.9" fill="url(#c33)"/>
+  <ellipse cx="286.5" cy="379.1" rx="43.0" ry="33.4" fill="url(#c34)"/>
+  <ellipse cx="305.0" cy="390.8" rx="36.7" ry="32.0" fill="url(#c35)"/>
+  <ellipse cx="287.3" cy="392.3" rx="57.7" ry="44.9" fill="url(#c36)"/>
+  <ellipse cx="291.7" cy="413.3" rx="33.0" ry="22.5" fill="url(#c37)"/>
+  <ellipse cx="269.6" cy="425.7" rx="25.5" ry="22.2" fill="url(#c38)"/>
+  <ellipse cx="244.6" cy="445.0" rx="37.5" ry="33.3" fill="url(#c39)"/>
+  <ellipse cx="216.2" cy="444.0" rx="59.9" ry="46.6" fill="url(#c40)"/>
+  <ellipse cx="204.7" cy="468.7" rx="46.5" ry="31.8" fill="url(#c41)"/>
+  <ellipse cx="176.2" cy="473.9" rx="33.6" ry="29.5" fill="url(#c42)"/>
+  <ellipse cx="114.4" cy="490.7" rx="28.4" ry="27.7" fill="url(#c43)"/>
+  <ellipse cx="94.9" cy="506.1" rx="49.8" ry="38.7" fill="url(#c44)"/>
+  <ellipse cx="107.1" cy="509.1" rx="32.9" ry="28.0" fill="url(#c45)"/>
+</svg>

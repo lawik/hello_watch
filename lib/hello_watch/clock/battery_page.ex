@@ -102,7 +102,6 @@ defmodule HelloWatch.Clock.BatteryPage do
           Background.color(Palette.c(:shadow)),
           Border.width(3),
           Border.color(Palette.c(:dusk)),
-          Border.glow(Palette.c(liquid, 0.35), 10),
           clip_nearby()
         ] ++ bubbles,
         el(

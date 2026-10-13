@@ -1,12 +1,13 @@
 defmodule HelloWatch.Clock.Touch do
   @moduledoc """
-  Reads taps and horizontal drags from the Zinitix touchscreen, whose
-  coordinates are panel pixels (0-453).
+  Reads taps and drags from the Zinitix touchscreen, whose coordinates are
+  panel pixels (0-453).
 
-  It sends the target `:touch` when a finger lands, `{:drag, dx}` as a
-  horizontal drag moves (dx in pixels from where it started, the latest
-  only), `{:release, dx}` when a drag lets go, and `:tap` for a touch that
-  barely moved. Vertical movement is ignored.
+  It sends the target `:touch` when a finger lands. A touch that moves past
+  `@drag_slop` locks to its main axis: `{:drag, dx}` or `{:vdrag, dy}` as it
+  moves (pixels from where it started, the latest only), then `{:release,
+  dx}` or `{:vrelease, dy}` when it lets go. A touch that barely moved sends
+  `{:tap, {x, y}}`.
   """
   use GenServer
 
@@ -19,7 +20,7 @@ defmodule HelloWatch.Clock.Touch do
   @abs_mt_x 53
   @abs_mt_y 54
   @abs_mt_tracking_id 57
-  # A touch becomes a drag once it has moved this far, mostly sideways.
+  # A touch becomes a drag once it has moved this far.
   @drag_slop 12
   # A touch that moves less than this is a tap.
   @tap_slop 25
@@ -106,30 +107,38 @@ defmodule HelloWatch.Clock.Touch do
        when is_integer(x) and is_integer(y), do: {gestures, %{state | start: {x, y}}}
 
   defp event({@ev_syn, 0, 0}, {gestures, %{down: true, start: {sx, sy}, x: x, y: y} = state}) do
-    dx = x - sx
+    {dx, dy} = {x - sx, y - sy}
 
-    if state.dragging or (abs(dx) >= @drag_slop and abs(dx) > abs(y - sy)),
-      do: {[{:drag, dx} | gestures], %{state | dragging: true}},
-      else: {gestures, state}
+    axis =
+      cond do
+        state.dragging -> state.dragging
+        Kernel.max(abs(dx), abs(dy)) < @drag_slop -> nil
+        abs(dx) > abs(dy) -> :x
+        true -> :y
+      end
+
+    case axis do
+      nil -> {gestures, state}
+      :x -> {[{:drag, dx} | gestures], %{state | dragging: :x}}
+      :y -> {[{:vdrag, dy} | gestures], %{state | dragging: :y}}
+    end
   end
 
   defp event(_, acc), do: acc
 
   # A new contact while a drag is still going (the controller can start a
   # fresh tracking id mid-drag) lets that drag go first, so it never hangs.
-  defp begin_touch({gestures, %{dragging: true, start: {sx, _}, x: x} = state}),
-    do: begin_touch({[{:release, x - sx} | gestures], %{state | dragging: false}})
+  defp begin_touch({gestures, %{dragging: axis, start: {_, _}} = state}) when axis != false,
+    do: begin_touch({[release(state) | gestures], %{state | dragging: false}})
 
   defp begin_touch({gestures, state}),
     do: {gestures, %{state | down: true, start: nil, dragging: false}}
 
   defp end_touch({gestures, %{down: true, start: {sx, sy}, x: x, y: y} = state}) do
-    dx = x - sx
-
     gesture =
       cond do
-        state.dragging -> [{:release, dx}]
-        abs(dx) < @tap_slop and abs(y - sy) < @tap_slop -> [:tap]
+        state.dragging -> [release(state)]
+        abs(x - sx) < @tap_slop and abs(y - sy) < @tap_slop -> [{:tap, {sx, sy}}]
         true -> []
       end
 
@@ -139,14 +148,20 @@ defmodule HelloWatch.Clock.Touch do
   defp end_touch({gestures, state}),
     do: {gestures, %{state | down: false, start: nil, dragging: false}}
 
+  defp release(%{dragging: :x, start: {sx, _}, x: x}), do: {:release, x - sx}
+  defp release(%{dragging: :y, start: {_, sy}, y: y}), do: {:vrelease, y - sy}
+
   # A batch of events can hold many drag steps; only the last one of each
   # run matters to the display.
   defp latest_drag(gestures) do
     gestures
-    |> Enum.chunk_by(&match?({:drag, _}, &1))
+    |> Enum.chunk_by(&elem_tag/1)
     |> Enum.flat_map(fn
-      [{:drag, _} | _] = drags -> [List.last(drags)]
+      [{tag, _} | _] = drags when tag in [:drag, :vdrag] -> [List.last(drags)]
       other -> other
     end)
   end
+
+  defp elem_tag({tag, _}), do: tag
+  defp elem_tag(other), do: other
 end

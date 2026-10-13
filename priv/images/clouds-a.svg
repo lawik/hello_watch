@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="794" height="454" viewBox="-170 0 794 454">
+  <!-- Soft white clouds, tinted per view with Svg.color (which keeps alpha). Wider than the panel by 170 px each side, so a view sliding in carries its clouds into its curved edge. -->
+  <defs>
+    <radialGradient id="c0" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.550"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.248"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c1" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.500"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.225"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c2" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.250"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.113"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c3" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.400"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.180"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="c4" cx="50%" cy="50%" r="50%">
+      <stop offset="0" stop-color="#fff" stop-opacity="0.400"/>
+      <stop offset="0.55" stop-color="#fff" stop-opacity="0.180"/>
+      <stop offset="1" stop-color="#fff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <ellipse cx="70.0" cy="90.0" rx="300.0" ry="230.0" fill="url(#c0)"/>
+  <ellipse cx="400.0" cy="390.0" rx="280.0" ry="220.0" fill="url(#c1)"/>
+  <ellipse cx="250.0" cy="240.0" rx="170.0" ry="120.0" fill="url(#c2)"/>
+  <ellipse cx="-120.0" cy="330.0" rx="200.0" ry="190.0" fill="url(#c3)"/>
+  <ellipse cx="590.0" cy="150.0" rx="200.0" ry="190.0" fill="url(#c4)"/>
+</svg>
