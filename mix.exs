@@ -48,13 +48,9 @@ defmodule HelloWatch.MixProject do
       {:jason, "~> 1.4"},
       {:tz, "~> 0.28"},
 
-      # UI: Emerge renders the watch face and pages, on the CPU into the
-      # framebuffer on the watch (see UI.md) or in a window on the host.
-      # Tracks the frame pacing branch for `drm_animation_pacing: :commit`
-      # (see HelloWatch.Clock). It has no precompiled NIFs, so it builds from
-      # source, which needs rustler.
-      {:emerge, git: "git@github.com:lawik/emerge.git", branch: "main"},
-      {:rustler, "~> 0.38.0", runtime: false},
+      # UI: Emerge renders the watch face and pages, with OpenGL ES straight to
+      # the panel on the watch (see UI.md) or in a window on the host.
+      {:emerge, "~> 0.5.0"},
 
       # Runs tailscaled (see HelloWatch.Tailscale).
       {:muontrap, "~> 1.8"},

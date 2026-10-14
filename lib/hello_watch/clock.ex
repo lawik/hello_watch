@@ -25,9 +25,9 @@ defmodule HelloWatch.Clock do
   `renderer:`:
 
     * `:drm`: Emerge's DRM backend draws with OpenGL ES on the GPU and
-      page-flips whole frames onto the panel. `HelloWatch.Clock.Display` then
-      only handles the backlight, for dimming and the screen going dark;
-      Emerge 0.4.2 can't power the panel down.
+      page-flips whole frames onto the panel. It also turns the display off
+      and on and sets its brightness, from `config/2`; going dark powers the
+      panel and display pipeline down.
     * `:framebuffer` (the default): headless on the CPU, each frame sent to
       `HelloWatch.Clock.Display`, which writes it to `/dev/fb0` (see UI.md).
 
@@ -74,6 +74,8 @@ defmodule HelloWatch.Clock do
   @sensor_stream [:battery, :heart, {:accel, 25}, {:gyro, 25}]
 
   @dim_timeout :timer.seconds(15)
+  # The brightness while dimmed on DRM, as a share of the panel's range.
+  @dim_brightness 0.25
   @idle_timeout :timer.minutes(2)
   @power_interval :timer.seconds(5)
   # How often the Tailscale view rereads tailscaled, to catch the login URL
@@ -140,7 +142,7 @@ defmodule HelloWatch.Clock do
 
   @impl Viewport
   def mount(opts) do
-    {config, opts} = Keyword.split(opts, [:display, :time_zone, :renderer])
+    {config, _opts} = Keyword.split(opts, [:display, :time_zone, :renderer])
     display = Keyword.get(config, :display, Display)
     renderer = if display, do: Keyword.get(config, :renderer, :framebuffer), else: :window
     # The framebuffer takes the renderer's bytes as they are; see Palette.
@@ -203,45 +205,61 @@ defmodule HelloWatch.Clock do
       |> stream(@idle_stream)
       |> start_idle_timer()
 
-    {:ok, state, Keyword.merge(viewport(renderer, display), opts)}
+    {:ok, state, viewport(renderer, display)}
   end
 
   defp viewport(:window, _display) do
-    [
-      otp_app: :hello_watch,
-      title: "HelloWatch",
-      width: 454,
-      height: 454,
-      assets: [fonts: @fonts]
-    ]
+    %Emerge.Config{
+      output: %Emerge.Config.Window{title: "HelloWatch", size: {454, 454}},
+      assets: [otp_app: :hello_watch, fonts: Enum.map(@fonts, &struct(Emerge.Config.Font, &1))]
+    }
   end
 
   defp viewport(:framebuffer, display) do
-    viewport(:window, display) ++
-      [
-        backend: :headless,
-        rendering_api: :raster,
-        headless: [mode: :binary, target: display.target(), pixel_format: :rgba8888]
-      ]
+    %{
+      viewport(:window, display)
+      | output: %Emerge.Config.Headless{size: {454, 454}, target: display.target()},
+        renderer: [api: :raster]
+    }
   end
 
   # The panel is DSI-1 on the display controller's KMS device, card1.
   defp viewport(:drm, display) do
-    viewport(:window, display) ++
-      [
-        backend: :drm,
-        rendering_api: :opengl,
-        drm_card: "/dev/dri/card1",
-        drm_output: "DSI-1",
-        hw_cursor: false,
-        # The panel takes 20-40 ms to flip a frame. Drawing the next frame
-        # while it does doubles the frame rate of animations.
-        drm_animation_pacing: :commit,
-        # Frame timings for EmergeSkia.stats/2, which can only be switched on
-        # as the renderer starts.
-        stats: true
-      ]
+    backlight =
+      case Path.wildcard("/sys/class/backlight/*") do
+        [device | _] -> %Emerge.Config.Backlight{device: device, brightness: 1.0}
+        [] -> %Emerge.Config.Backlight{device: nil}
+      end
+
+    %{
+      viewport(:window, display)
+      | output: %Emerge.Config.DRM{
+          card: "/dev/dri/card1",
+          connector: "DSI-1",
+          backlight: backlight,
+          hotplug_interval_ms: nil
+        },
+        renderer: [api: :opengl],
+        input: [cursor: [hardware: false]],
+        # Frame timings for EmergeSkia.stats/2.
+        diagnostics: [stats: true]
+    }
   end
+
+  @impl Viewport
+  # On DRM, the display follows the screen's state: off while dark, and
+  # dimmed after `@dim_timeout`.
+  def config(%{output: %Emerge.Config.DRM{} = output} = previous, state) do
+    backlight =
+      if output.backlight.device,
+        do: %{output.backlight | brightness: if(state.dimmed, do: @dim_brightness, else: 1.0)},
+        else: output.backlight
+
+    display = if state.on, do: :on, else: :off
+    %{previous | output: %{output | display: display, backlight: backlight}}
+  end
+
+  def config(previous, _state), do: previous
 
   @impl Viewport
   def render(state) do
@@ -662,11 +680,8 @@ defmodule HelloWatch.Clock do
   def handle_info(:touch, %{on: true} = state), do: {:noreply, start_idle_timer(state)}
   def handle_info(:touch, state), do: {:noreply, wake(state)}
 
-  def handle_info(:dim, %{on: true, dimmed: false} = state) do
-    if state.display, do: state.display.dim()
-
-    {:noreply, %{state | dimmed: true, dim_timer: nil}}
-  end
+  def handle_info(:dim, %{on: true, dimmed: false} = state),
+    do: {:noreply, panel(%{state | dimmed: true, dim_timer: nil}, :dim)}
 
   def handle_info(:dim, state), do: {:noreply, state}
 
@@ -914,10 +929,10 @@ defmodule HelloWatch.Clock do
     if state.idle_timer, do: Process.cancel_timer(state.idle_timer)
     if state.dim_timer, do: Process.cancel_timer(state.dim_timer)
     close_sensors(state.sensor_port)
-    if state.display, do: state.display.sleep()
     HelloWatch.Suspend.screen_off()
 
     %{state | on: false, idle_timer: nil, dim_timer: nil, sensor_port: nil, sensors: %{}}
+    |> panel(:sleep)
   end
 
   defp wake(state) do
@@ -928,9 +943,22 @@ defmodule HelloWatch.Clock do
       |> start_idle_timer()
       |> ensure_ticking()
       |> Viewport.rerender()
+      |> panel(:wake)
 
-    if state.display, do: state.display.wake()
     HelloWatch.Suspend.screen_on()
+    state
+  end
+
+  # Tells the panel the screen went dark, woke, dimmed or undimmed. On DRM
+  # that's Emerge's display and backlight (see config/2), which a render
+  # applies; a wake has already rendered. Otherwise it's
+  # HelloWatch.Clock.Display.
+  defp panel(%{renderer: :drm} = state, :wake), do: state
+  defp panel(%{renderer: :drm} = state, _change), do: Viewport.rerender(state)
+  defp panel(%{display: nil} = state, _change), do: state
+
+  defp panel(state, change) do
+    apply(state.display, change, [])
     state
   end
 
@@ -999,10 +1027,7 @@ defmodule HelloWatch.Clock do
     if state.dimmed, do: undim(state), else: state
   end
 
-  defp undim(state) do
-    if state.display, do: state.display.undim()
-    %{state | dimmed: false}
-  end
+  defp undim(state), do: panel(%{state | dimmed: false}, :undim)
 
   defp enter_page(state, :sensors), do: stream(state, @sensor_stream)
   defp enter_page(state, :tailscale), do: state |> enter_page(:clock) |> read_tailscale()
