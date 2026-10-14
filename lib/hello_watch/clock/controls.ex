@@ -1,14 +1,17 @@
 defmodule HelloWatch.Clock.Controls do
   @moduledoc """
   The watch's global switches, shown as constellations in the sky: Wi-Fi,
-  Bluetooth and Tailscale.
+  Bluetooth, Tailscale and NervesHub.
 
   Wi-Fi and Bluetooth are switched with their rfkill soft blocks, which the
   kernel keeps for the radio whatever the network configuration is. Turning
   Wi-Fi off drops SSH and Tailscale with it; turn it back on from the watch.
   Tailscale starts and stops tailscaled (see HelloWatch.Tailscale).
+  NervesHub starts and stops the `:nerves_hub_link` application, and with it
+  firmware updates and remote IEx; it starts again on every boot.
 
-  `read/1` and `toggle/2` take an `:rfkill` directory for tests.
+  `read/1` and `toggle/2` take an `:rfkill` directory, and the Tailscale and
+  NervesHub states, for tests.
   """
 
   alias HelloWatch.Tailscale
@@ -16,7 +19,7 @@ defmodule HelloWatch.Clock.Controls do
   @rfkill "/sys/class/rfkill"
 
   @type control :: %{
-          id: :wifi | :bluetooth | :tailscale,
+          id: :wifi | :bluetooth | :tailscale | :nerves_hub,
           name: String.t(),
           on: boolean() | nil,
           detail: String.t()
@@ -27,11 +30,13 @@ defmodule HelloWatch.Clock.Controls do
   def read(opts \\ []) do
     rfkill = Keyword.get(opts, :rfkill, @rfkill)
     tailscale = Keyword.get_lazy(opts, :tailscale, &tailscale_info/0)
+    nerves_hub = Keyword.get_lazy(opts, :nerves_hub, &nerves_hub_info/0)
 
     [
       radio(:wifi, "Wi-Fi", rfkill, "wlan", &ssid/0),
       radio(:bluetooth, "Bluetooth", rfkill, "bluetooth", fn -> nil end),
-      tailscale(tailscale)
+      tailscale(tailscale),
+      nerves_hub(nerves_hub)
     ]
   end
 
@@ -52,6 +57,14 @@ defmodule HelloWatch.Clock.Controls do
       %{state: "Unavailable"} -> {:error, :unavailable}
       nil -> {:error, :unavailable}
       _running -> Tailscale.stop()
+    end
+  end
+
+  def toggle(:nerves_hub, opts) do
+    case Keyword.get_lazy(opts, :nerves_hub, &nerves_hub_info/0) do
+      :unconfigured -> {:error, :unconfigured}
+      :stopped -> start_nerves_hub()
+      _running -> Application.stop(:nerves_hub_link)
     end
   end
 
@@ -79,6 +92,17 @@ defmodule HelloWatch.Clock.Controls do
     do: %{id: :tailscale, name: "Tailscale", on: true, detail: String.downcase(state)}
 
   defp tailscale(nil), do: %{id: :tailscale, name: "Tailscale", on: nil, detail: "…"}
+
+  defp nerves_hub(:connected),
+    do: %{id: :nerves_hub, name: "NervesHub", on: true, detail: "connected"}
+
+  defp nerves_hub(:connecting),
+    do: %{id: :nerves_hub, name: "NervesHub", on: true, detail: "connecting"}
+
+  defp nerves_hub(:stopped), do: %{id: :nerves_hub, name: "NervesHub", on: false, detail: "off"}
+
+  defp nerves_hub(:unconfigured),
+    do: %{id: :nerves_hub, name: "NervesHub", on: nil, detail: "not configured"}
 
   # The first rfkill switch of `type`, and whether it's soft blocked.
   defp soft_blocked(rfkill, type) do
@@ -113,6 +137,26 @@ defmodule HelloWatch.Clock.Controls do
         %{ssid: ssid} when ssid != "" -> ssid
         _ -> nil
       end
+    end
+  end
+
+  # Built without credentials (see config/target.exs), it starts with nothing
+  # to run. NervesHubLink only exists on the watch.
+  defp nerves_hub_info do
+    cond do
+      Application.get_env(:nerves_hub_link, :connect, true) == false -> :unconfigured
+      Process.whereis(NervesHubLink.Socket) == nil -> :stopped
+      apply(NervesHubLink, :connected?, []) -> :connected
+      true -> :connecting
+    end
+  catch
+    :exit, _reason -> :connecting
+  end
+
+  defp start_nerves_hub do
+    case Application.ensure_all_started(:nerves_hub_link) do
+      {:ok, _apps} -> :ok
+      error -> error
     end
   end
 

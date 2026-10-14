@@ -14,15 +14,25 @@ defmodule HelloWatch.Clock.ControlsTest do
       File.write!(Path.join(path, "soft"), soft <> "\n")
     end
 
-    %{opts: [rfkill: dir, tailscale: %{state: "Running", ip: "100.64.0.7"}], dir: dir}
+    %{
+      opts: [
+        rfkill: dir,
+        tailscale: %{state: "Running", ip: "100.64.0.7"},
+        nerves_hub: :connected
+      ],
+      dir: dir
+    }
   end
 
   test "reads each switch", %{opts: opts} do
     assert [
              %{id: :wifi, on: true},
              %{id: :bluetooth, on: false, detail: "off"},
-             %{id: :tailscale, on: true, detail: "100.64.0.7"}
+             %{id: :tailscale, on: true, detail: "100.64.0.7"},
+             %{id: :nerves_hub, on: true, detail: "connected"}
            ] = Controls.read(opts)
+
+    assert [_, _, _, %{on: nil}] = Controls.read(Keyword.put(opts, :nerves_hub, :unconfigured))
   end
 
   test "flips the radios with their rfkill soft blocks", %{opts: opts, dir: dir} do
@@ -42,6 +52,7 @@ defmodule HelloWatch.Clock.ControlsTest do
   test "finds the star under a tap" do
     assert Sky.hit({142, 162}) == :wifi
     assert Sky.hit({300, 170}) == :bluetooth
+    assert Sky.hit({320, 296}) == :nerves_hub
     assert Sky.hit({227, 430}) == nil
   end
 end

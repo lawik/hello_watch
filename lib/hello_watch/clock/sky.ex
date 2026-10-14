@@ -24,9 +24,10 @@ defmodule HelloWatch.Clock.Sky do
 
   # Where each switch's constellation is centred.
   @constellations %{
-    wifi: {138, 172},
-    bluetooth: {316, 172},
-    tailscale: {227, 320}
+    wifi: {138, 160},
+    bluetooth: {316, 160},
+    tailscale: {138, 300},
+    nerves_hub: {316, 300}
   }
 
   # Faint background stars, fixed so the sky doesn't shimmer between frames.
