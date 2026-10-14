@@ -1,92 +1,166 @@
 defmodule HelloWatch.Clock.Pages do
   @moduledoc """
-  The views beside the face: the cloudy backdrop, a title between two
-  sparkles, and a body. `render/3` lays out rows of text; `page/3` takes any
-  body.
+  The views beside the face: the cloudy backdrop, a title along the top of
+  the rim between two sparkles, an optional caption along the bottom, and a
+  body. `render/4` lays out rows of text, each starting at the panel's left
+  edge where it sits and sized to fit before the right edge; `page/4` takes
+  any body.
   """
   use Emerge.UI
 
-  alias HelloWatch.Clock.{Backdrop, Moon, Palette}
+  alias HelloWatch.Clock.{Arc, Backdrop, Moon, Palette}
 
   @size 454
+  @center div(@size, 2)
 
-  # The panel is round, so the body starts past the title and is inset from
-  # the left curve; rows narrow near the top and bottom.
-  @body_top 112
-  @body_left 70
-  @label_width 104
-  @max_rows 11
+  # Rows are centred on the panel's middle, but start no higher than this.
+  @body_top 96
+  # Row heights for working out where each row sits, so it can be sized to
+  # the panel's width there.
+  @label 22
+  @value 34
+  @big 64
+  @line 30
+  @gap 12
+  @spacing 8
+  # Kept clear of the rim either side.
+  @margin 30
 
   @doc """
-  A view of `rows`: `{label, value}` pairs, plain strings, or `""` for a
-  gap. `view` picks the backdrop's tint.
+  A view of `rows`: `{label, value}` pairs, `{:big, label, value}` for a
+  headline value, plain strings, or `""` for a gap. `view` picks the backdrop's tint; `caption` runs along the bottom.
   """
-  def render(title, rows, view) do
+  def render(title, rows, view, caption \\ nil) do
+    heights = Enum.map(rows, &row_height/1)
+    total = Enum.sum(heights) + @spacing * (length(rows) - 1)
+    top = Kernel.max(@body_top, round(@center - total / 2))
+
+    {elements, _} =
+      Enum.map_reduce(Enum.zip(rows, heights), top, fn {row, h}, y ->
+        {row_element(row, y), y + h + @spacing}
+      end)
+
     body =
       column(
-        [padding_each(@body_top, 0, 0, @body_left), spacing(5)],
-        rows |> Enum.take(@max_rows) |> Enum.map(&row_element/1)
+        [width(px(@size)), padding_each(top, 0, 0, 0), spacing(@spacing)],
+        elements
       )
 
-    page(title, body, view)
+    page(title, body, view, caption)
   end
 
   @doc "A flat colour for areas next to a view, as it slides in."
   def background(_view), do: Backdrop.color()
 
   @doc "A view with `body` laid over the whole 454x454 panel."
-  def page(title, body, view) do
+  def page(title, body, view, caption \\ nil) do
     el(
       [
         width(px(@size)),
         height(px(@size)),
         Backdrop.background()
       ] ++
-        Enum.map(Backdrop.layers(view) ++ [title(title), body], &Nearby.in_front/1),
+        Enum.map(
+          Backdrop.layers(view) ++ title(title) ++ caption(caption) ++ [body],
+          &Nearby.in_front/1
+        ),
       none()
     )
   end
 
+  @title_size 38
+
   defp title(title) do
-    el(
-      [width(px(@size)), padding_each(44, 0, 0, 0)],
-      row([center_x(), spacing(12)], [
-        Moon.sparkle(12, :lilac, [center_y()], 8),
-        el(
-          [Font.family("Macondo"), Font.size(34), Font.color(Palette.c(:candle))],
-          text(title)
-        ),
-        Moon.sparkle(12, :lilac, [center_y()], -8)
-      ])
-    )
-  end
+    # The sparkles sit just past either end of the title, on its arc.
+    half = Arc.width(title, :macondo, @title_size) / 2 + 22
+    degrees = half / (@center - 40) * 180 / :math.pi()
 
-  defp row_element(""), do: el([height(px(8))], none())
-
-  defp row_element({label, value}) do
-    row([spacing(8)], [
+    sparkle = fn degrees, tilt ->
       el(
         [
-          width(px(@label_width)),
-          center_y(),
-          Font.family("Alegreya Sans"),
-          Font.italic(),
-          Font.size(17),
-          Font.color(Palette.c(:lilac))
+          width(px(@size)),
+          height(px(@size)),
+          padding_each(34, 0, 0, 0),
+          Transform.rotate(degrees)
         ],
-        text(label)
-      ),
-      el(
-        [Font.family("Alegreya Sans"), Font.size(20), Font.color(Palette.c(:bone))],
-        text(String.slice(to_string(value), 0, 22))
+        Moon.sparkle(12, :lilac, [center_x()], tilt)
       )
+    end
+
+    Arc.rim(title, :top,
+      font: :macondo,
+      size: @title_size,
+      color: Palette.c(:candle),
+      inset: 20,
+      tracking: 1
+    ) ++ [sparkle.(-degrees, 8), sparkle.(degrees, -8)]
+  end
+
+  defp caption(nil), do: []
+
+  defp caption(caption),
+    do: Arc.rim(caption, :bottom, font: :italic, size: 22, color: Palette.c(:lilac), inset: 22)
+
+  defp row_height(""), do: @gap
+  defp row_height({:big, _label, _value}), do: @label + @big
+  defp row_height({_label, _value}), do: @label + @value
+  defp row_height(_line), do: @line
+
+  defp row_element("", _y), do: el([height(px(@gap))], none())
+
+  defp row_element({:big, label, value}, y) do
+    column([spacing(0)], [
+      label(label, y),
+      line(to_string(value), y + @label, @big, "Macondo", :macondo, 56)
     ])
   end
 
-  defp row_element(line) do
+  defp row_element({label, value}, y) do
+    column([spacing(0)], [
+      label(label, y),
+      line(to_string(value), y + @label, @value, "Alegreya Sans", :sans, 28)
+    ])
+  end
+
+  defp row_element(line, y), do: line(to_string(line), y, @line, "Alegreya Sans", :sans, 24)
+
+  # A line of text from the panel's left edge where it sits, sized to fit
+  # before the right edge.
+  defp line(text, y, h, family, font, size) do
+    {left, width} = span(y, h)
+
     el(
-      [Font.family("Alegreya Sans"), Font.size(19), Font.color(Palette.c(:bone))],
-      text(String.slice(to_string(line), 0, 30))
+      [
+        height(px(h)),
+        padding_each(0, 0, 0, left),
+        Font.family(family),
+        Font.size(Arc.fit(text, font, size, width)),
+        Font.color(Palette.c(:bone))
+      ],
+      el([center_y()], text(text))
     )
+  end
+
+  defp label(label, y) do
+    {left, _width} = span(y, @label)
+
+    el(
+      [
+        height(px(@label)),
+        padding_each(0, 0, 0, left),
+        Font.family("Alegreya Sans"),
+        Font.italic(),
+        Font.size(18),
+        Font.color(Palette.c(:lilac))
+      ],
+      text(label)
+    )
+  end
+
+  # Where the panel's left edge is, and how wide it is, along the narrower
+  # of a line's top and bottom edges.
+  defp span(y, h) do
+    width = Arc.chord(Kernel.max(abs(y - @center), abs(y + h - @center)), @margin)
+    {round((@size - width) / 2), width}
   end
 end

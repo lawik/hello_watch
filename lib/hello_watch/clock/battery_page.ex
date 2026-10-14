@@ -44,24 +44,15 @@ defmodule HelloWatch.Clock.BatteryPage do
 
     Pages.page(
       "Battery",
-      column([width(px(@size)), padding_each(104, 0, 0, 0), spacing(14)], [
+      column([width(px(@size)), padding_each(100, 0, 0, 0), spacing(10)], [
         flask(percent, liquid, status == :charging),
         el(
-          [center_x(), Font.family("Macondo"), Font.size(40), Font.color(Palette.c(:bone))],
+          [center_x(), Font.family("Macondo"), Font.size(60), Font.color(Palette.c(:bone))],
           text("#{percent}%")
-        ),
-        el(
-          [
-            center_x(),
-            Font.family("Alegreya Sans"),
-            Font.italic(),
-            Font.size(17),
-            Font.color(Palette.c(:lilac))
-          ],
-          text(Enum.join(Enum.reject([status_text, volts], &is_nil/1), " · "))
         )
       ]),
-      page
+      page,
+      Enum.join(Enum.reject([status_text, volts], &is_nil/1), " · ")
     )
   end
 

@@ -47,7 +47,7 @@ defmodule HelloWatch.Clock.TailscalePage do
     )
   end
 
-  def render(info, page), do: Pages.render(@title, rows(info), page)
+  def render(info, page), do: Pages.render(@title, rows(info), page, info[:tailnet])
 
   defp rows(nil), do: ["Reading…"]
   defp rows(%{state: "Unavailable"}), do: ["Not running on this device"]
@@ -58,8 +58,7 @@ defmodule HelloWatch.Clock.TailscalePage do
       for {label, value} <- [
             {"status", state(info)},
             {"name", info.name && short_name(info.name)},
-            {"address", info.ip},
-            {"tailnet", info.tailnet}
+            {"address", info.ip}
           ],
           value != nil,
           do: {label, value}
@@ -74,7 +73,7 @@ defmodule HelloWatch.Clock.TailscalePage do
 
   defp hint(_info), do: []
 
-  # The first label of the MagicDNS name; the tailnet's domain is its own row.
+  # The first label of the MagicDNS name; the tailnet runs along the bottom.
   defp short_name(name), do: name |> String.split(".") |> hd()
 
   defp state(%{state: "Running"}), do: "Connected"

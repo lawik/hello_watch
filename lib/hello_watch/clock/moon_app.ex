@@ -24,28 +24,19 @@ defmodule HelloWatch.Clock.MoonApp do
 
     Pages.page(
       "Moon",
-      column([width(px(@size)), padding_each(108, 0, 0, 0), spacing(14)], [
+      column([width(px(@size)), padding_each(104, 0, 0, 0), spacing(16)], [
         # A faint rim, so a thin crescent still shows the whole moon.
         el(
           [center_x()],
-          Moon.disc(phase, 168, attrs: [Border.width(2), Border.color(Palette.c(:lilac, 0.35))])
+          Moon.disc(phase, 176, attrs: [Border.width(2), Border.color(Palette.c(:lilac, 0.35))])
         ),
         el(
-          [center_x(), Font.family("Macondo"), Font.size(26), Font.color(Palette.c(:bone))],
+          [center_x(), Font.family("Macondo"), Font.size(34), Font.color(Palette.c(:bone))],
           text(name(phase))
-        ),
-        el(
-          [
-            center_x(),
-            Font.family("Alegreya Sans"),
-            Font.italic(),
-            Font.size(17),
-            Font.color(Palette.c(:lilac))
-          ],
-          text("#{lit}% lit · #{full}")
         )
       ]),
-      :moon
+      :moon,
+      "#{lit}% lit · #{full}"
     )
   end
 

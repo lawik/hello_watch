@@ -358,7 +358,7 @@ defmodule HelloWatch.Clock do
     do: Face.render(local_time(state), Moon.phase(DateTime.utc_now()), battery(state))
 
   defp view(state, :battery), do: BatteryPage.render(battery(state), :battery)
-  defp view(_state, :network), do: Pages.render("Network", network_rows(), :network)
+  defp view(_state, :network), do: Pages.render("Network", network_rows(), :network, hostname())
   defp view(state, :sensors), do: Pages.render("Sensors", sensor_rows(state), :sensors)
   defp view(_state, :moon), do: MoonApp.render(Moon.phase(DateTime.utc_now()))
   defp view(state, :tailscale), do: TailscalePage.render(state.tailscale, :tailscale)
@@ -1115,35 +1115,34 @@ defmodule HelloWatch.Clock do
   end
 
   # The watch's hostname and addresses.
+  # Each interface's address: its IPv4 one if it has one, as IPv6 addresses
+  # are too long to read at a useful size.
   defp network_rows do
-    hostname =
-      case :inet.gethostname() do
-        {:ok, name} -> to_string(name)
-        _ -> "unknown"
-      end
+    case :inet.getifaddrs() do
+      {:ok, ifs} ->
+        for {name, attrs} <- ifs,
+            addresses =
+              attrs
+              |> Keyword.get_values(:addr)
+              |> Enum.reject(&(loopback?(&1) or link_local?(&1))),
+            addresses != [],
+            do:
+              {to_string(name),
+               :inet.ntoa(Enum.find(addresses, hd(addresses), &(tuple_size(&1) == 4)))}
 
-    interfaces =
-      case :inet.getifaddrs() do
-        {:ok, ifs} ->
-          Enum.flat_map(ifs, fn {name, attrs} ->
-            attrs
-            |> Keyword.get_values(:addr)
-            |> Enum.reject(&(loopback?(&1) or link_local?(&1)))
-            |> Enum.map(&(:inet.ntoa(&1) |> to_string()))
-            |> Enum.with_index()
-            |> Enum.map(fn {address, i} ->
-              {if(i == 0, do: to_string(name), else: ""), address}
-            end)
-          end)
-
-        _ ->
-          ["interfaces unavailable"]
-      end
-
-    [{"hostname", hostname}, ""] ++ interfaces
+      _ ->
+        ["interfaces unavailable"]
+    end
   end
 
-  # fe80:: addresses are too long for the round page and of no use to read.
+  defp hostname do
+    case :inet.gethostname() do
+      {:ok, name} -> to_string(name)
+      _ -> nil
+    end
+  end
+
+  # fe80:: addresses are of no use to read.
   defp link_local?({0xFE80, _, _, _, _, _, _, _}), do: true
   defp link_local?(_), do: false
 
@@ -1158,7 +1157,7 @@ defmodule HelloWatch.Clock do
     gyro = state.sensors[:gyro] || %{}
 
     [
-      {"heart rate", "#{number(heart["value"], 0)} bpm"},
+      {:big, "heart rate", "#{number(heart["value"], 0)} bpm"},
       sensor_error(state, :heart),
       {"accel", xyz(accel)},
       sensor_error(state, :accel),
