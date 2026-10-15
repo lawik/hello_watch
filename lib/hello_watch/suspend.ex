@@ -14,6 +14,10 @@ defmodule HelloWatch.Suspend do
       a wake, which holds the watch awake until the screen goes off again;
     * any other wake (RTC, charger) gets another `@grace` and suspends again.
 
+  Wi-Fi and Bluetooth are soft blocked (rfkill) for each suspend and
+  unblocked after it, as connected Wi-Fi keeps drawing current while the
+  watch sleeps. A radio that was already off stays off.
+
   The `/sys/power/wakeup_count` handshake makes a wake event that arrives
   while deciding cancel the suspend instead of being lost.
 
@@ -28,6 +32,8 @@ defmodule HelloWatch.Suspend do
   @power "/sys/power"
   @charger_online "/sys/class/power_supply/pm660-charger/online"
   @ssh_port 22
+  @rfkill "/sys/class/rfkill"
+  @radios ["wlan", "bluetooth"]
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -84,6 +90,13 @@ defmodule HelloWatch.Suspend do
   end
 
   defp suspend do
+    blocked = radios_off()
+    result = freeze()
+    Enum.each(blocked, &File.write(Path.join(&1, "soft"), "0"))
+    result
+  end
+
+  defp freeze do
     with {:ok, count} <- File.read(Path.join(@power, "wakeup_count")),
          # Fails if a wake event came in since the read.
          :ok <- File.write(Path.join(@power, "wakeup_count"), String.trim(count)),
@@ -95,6 +108,16 @@ defmodule HelloWatch.Suspend do
         Logger.debug("Suspend: aborted: #{inspect(error)}")
         error
     end
+  end
+
+  # Soft blocks the radios that are on, returning their rfkill switches.
+  defp radios_off do
+    for path <- Path.wildcard(Path.join(@rfkill, "rfkill*")),
+        {:ok, type} <- [File.read(Path.join(path, "type"))],
+        String.trim(type) in @radios,
+        File.read(Path.join(path, "soft")) == {:ok, "0\n"},
+        File.write(Path.join(path, "soft"), "1") == :ok,
+        do: path
   end
 
   defp on_usb? do
