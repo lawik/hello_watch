@@ -1,7 +1,7 @@
 # Emerge issues
 
 Problems and gaps we hit while building the watch UI on Emerge 0.4.2. The
-watch uses the headless raster backend (see UI.md). Each issue says how we
+watch uses the headless raster backend (see DISPLAY.md). Each issue says how we
 confirmed it and what hello_watch does about it.
 
 ## Clipping
@@ -154,7 +154,7 @@ These were measured on the GPU system with the DRM/OpenGL backend and
 
 ## Found while reading the source (not hit in use)
 
-From the DRM backend research in UI.md:
+From the DRM backend research in DISPLAY.md:
 
 - **`present` ignored on DRM:** the raster `present` option is ignored on the
   DRM backend (`_requested_raster_present`,

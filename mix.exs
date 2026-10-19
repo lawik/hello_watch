@@ -49,7 +49,7 @@ defmodule HelloWatch.MixProject do
       {:tz, "~> 0.28"},
 
       # UI: Emerge renders the watch face and pages, with OpenGL ES straight to
-      # the panel on the watch (see UI.md) or in a window on the host.
+      # the panel on the watch (see DISPLAY.md) or in a window on the host.
       {:emerge, "~> 0.5.0"},
 
       # Runs tailscaled (see HelloWatch.Tailscale).

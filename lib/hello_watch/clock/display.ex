@@ -2,7 +2,7 @@ defmodule HelloWatch.Clock.Display do
   @moduledoc """
   Puts the clock's frames on the panel, and turns the panel off and on.
 
-  The clock is an Emerge viewport rendered headless on the CPU (see UI.md):
+  The clock is an Emerge viewport rendered headless on the CPU (see DISPLAY.md):
   each new frame arrives here as 454x454 RGBA8888, drawn with red and blue
   swapped (see HelloWatch.Clock.Palette), so its bytes are already the B, G,
   R, X that the MSM driver's fbdev emulation stores (32 bpp XRGB8888, rows

@@ -90,7 +90,7 @@ config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels"
   (32 bpp, padded rows). Turning the screen off fades the panel
   brightness down and blanks the framebuffer, which powers the panel down
   with system v0.2.0 or later. Touch and buttons are read by the app, since
-  a headless viewport gets no input. See [UI.md](UI.md).
+  a headless viewport gets no input. See [DISPLAY.md](DISPLAY.md).
 - **Time:** `HelloWatch.PmicRtc` is a `NervesTime` RTC that keeps the clock
   across reboots by storing an offset to the PMIC counter, which Linux
   cannot set.

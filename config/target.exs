@@ -160,7 +160,7 @@ end
 # EGL and GBM; wip/gpu of nerves_system_tickwatch_pro3, passed as
 # NERVES_SYSTEM until it's released). On the v0.2.0 system, which has no
 # EGL or GBM, use `compiled_backends: []` (the minimal raster renderer) and
-# `renderer: :framebuffer` below instead. See UI.md.
+# `renderer: :framebuffer` below instead. See DISPLAY.md.
 config :emerge, compiled_backends: [drm: [:opengl]]
 
 # Local time for the watch face, as an IANA zone name so daylight saving is

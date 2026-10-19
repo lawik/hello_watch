@@ -1,270 +1,435 @@
-# UI: DRM on the watch and driving it from Emerge
+# UI: what the watch should feel like, and why
 
-What we know about the display stack on the TicWatch Pro 3, and how
-`hello_watch` renders with [Emerge](https://hexdocs.pm/emerge) 0.4.2. Option B
-below is what the app now uses. Power-related display findings are in
+This describes the design of hello_watch's interface, for anyone porting it to
+another framework or device. It records what the owner asked for, what they
+turned down, and the details that make it work on a 454×454 round AMOLED. The
+display stack and Emerge backends are covered in [DISPLAY.md](DISPLAY.md),
+Emerge's quirks in [EMERGE-ISSUES.md](EMERGE-ISSUES.md), and power in
 [POWER-MANAGEMENT.md](POWER-MANAGEMENT.md).
 
-Sources:
+Quotes are the owner's own words from the design sessions (2026-10-12 to
+2026-10-15). Treat them as requirements. The numbers are what the code uses
+now, and were tuned on the watch; keep them unless the new device is
+different.
 
-- The watch `nerves-0453` (system v0.2.0, kernel 7.1.3), read-only, on
-  2026-10-12.
-- The system's kernel config and patches in `../system/ticwatch_pro3`.
-- Emerge 0.4.2's Elixir and Rust sources, fetched into `deps/emerge`.
-- [lawik/nerves_phone](https://github.com/lawik/nerves_phone), which runs
-  Emerge on a Fairphone 3.
+## The spirit
 
-## Summary
+> Make the colors and any decorations quirky and delightful. Find a more
+> humane font. Make it way more witchy.
 
-- **The kernel side is ready.** The MSM DRM/KMS driver owns the panel
-  (`/dev/dri/card1`, connector `DSI-1`, 454×454) with a native panel driver.
-  The display pipeline powers down when the screen is off.
-- **The userspace side isn't.** The system ships no `libgbm`, `libEGL`,
-  GLES or Mesa. Emerge's DRM backend always presents through EGL on a GBM
-  surface, so it can't run on the current system at all.
-- There are two ways forward:
-  - **A. Add Mesa to the system** (GBM + EGL + freedreno for the Adreno 504)
-    and use Emerge's DRM backend. Emerge then owns the screen, touch input,
-    gestures and page flips.
-  - **B. No system change.** Use Emerge headless with the raster renderer.
-    It sends RGB888 frames to our process, which writes them to `/dev/fb0` as
-    `Display` does today. The catch is input: a headless viewport has no
-    public way to feed it touches, so Emerge's buttons and swipe events
-    wouldn't fire. We'd keep our own touch, swipe and button handling.
-- B works today; A is the "real" Emerge integration but needs a system build
-  and has open questions about power and the GPU.
+Followed straight away by the correction that sets the limit:
 
-## The display stack on the watch
+> The weird names for the screens are over the top. The information doesn't
+> have to be wrong.. […] Brewing is also over the top. I kind of like Moon's
+> day so I'll allow it.
+
+So the rule is **witchy in its look, plain in its words.** The ornaments are
+moons, sparkles, stars, a potion flask and clouds of night sky. Every title,
+label and status is ordinary English: "Battery", "Network", "Charging", "On
+battery", "Low". The one licensed exception is the face's old day names
+("Moon's day · 16", "Tiw's day", "Woden's day", …). Don't bring back invented
+screen names (an earlier draft had "Ley Lines", "The Coven" and a "Brewing"
+charge status) or fanciful wording for data.
+
+Second rule: **flat, not shiny.**
+
+> the glow or edge gradient is a bit tacky, drop that, flat is fine.
+
+No glows on edges, no bevels, no outer shadows. Soft light only comes from
+big, mild gradients (the clouds) and from flat translucent halo discs behind a
+few ornaments.
+
+## The places: sky above, inventory below, apps between
+
+> I want a new UI paradigm piece that is on every view. […] swipe down and
+> that will shift our view upwards and show stars that is where control
+> things like wifi, bluetooth, tailscale, etc. They are the global constants.
+> […] Pulling up instead should expand a circular dark section, as if we are
+> looking into our own inventory. This would be our apps, utilities, things
+> we use the watch for.
+>
+> So the sky has the constellations, necessary things, constant things which
+> consult now and then. The inward looking menu has our things. What we
+> choose to use.
+
+This is the core metaphor, and it should survive any port:
+
+- **Apps** are what's on screen: the face, alarms, timers, stopwatch, battery,
+  network, sensors, moon, Tailscale.
+- **The sky** (drag down from anywhere): system switches, drawn as
+  constellations. Outward and constant.
+- **The inventory** (drag up from anywhere): the apps, as tokens in a dark
+  circle. Inward and personal.
+- **Sideways drags** move through recently used apps.
+
+There are no other navigation devices: no back button, page dots, menus or
+tab bars.
+
+## Moving between apps
+
+> not interlocking, the one you pull in is pulled in on top, covering the old
+> previous one which is removed when the transition is done. regardless of
+> direction we pull in on top. So the UI you were on does not move. Only the
+> new screen moves in and not really immediately
+
+> Each screen transition should be a swipe and to make the roundness more
+> interesting the incoming screen should swipe in with a rounded edge. The
+> color of the new screen concave. Take inspiration from phases of the moon.
+
+The rules (all in `HelloWatch.Clock`):
+
+- **Cover, don't push.** The current app never moves. The incoming one slides
+  over it from either side and covers it, like the moon's shadow sweeping
+  across. The old app is dropped once it's covered.
+- **The leading edge is an arc.** From the right it's concave, a gentle arc of
+  radius 400 (`@arc`). From the left it's convex, radius 240 (`@convex_arc`),
+  close to the panel's own curve.
+- **"Not really immediately."** The first 30 px of a drag do nothing (`@dead`),
+  then the incoming app catches up at 1.15× the finger (`@catch_up`). A drag
+  must not twitch the screen.
+- **It follows the finger** while dragging, with no animation.
+- **Letting go past halfway switches.** That's 227 px (`@commit_px`). Short of
+  it, the app slides back out.
+- **The settle eases out.** It takes 520 ms for a full panel width
+  (`@transition_ms`), scaled to the distance left, and never less than 120 ms.
+- **Recents order.** Dragging right goes back to older apps, left forward to
+  newer ones. Opening an app from the inventory puts it first. At either end
+  of the list a drag does nothing.
+
+Two later refinements, both important:
+
+> the convex and concave parts of each app are still single-color while the
+> gradients mismatch that. They should be part of the gradiented shape.
+
+Each view's backdrop is wider than the panel (170 px past each side,
+`Backdrop`'s `@reach`), and the sliding shape clips it. So the bulge of a
+convex edge shows the same gradient and clouds as the rest of that view, and
+not a flat fill.
+
+> if emerge allows it we could also have the edges as we are swiping be
+> transparently gradient cloudy stuff instead of the hard convex/concave bit
+
+A band of soft cloud puffs rides each leading edge, over the seam
+(`priv/images/edge-convex.svg` and `edge-concave.svg`). It's tinted with the
+incoming view's first cloud colour at 55% alpha.
+
+The owner signed this off: "I like the side-to-side transitions now."
+
+## The sky (drag down)
+
+- **The sky drops in from above.** It covers 454 px of travel. The app below
+  doesn't simply get pushed down:
+
+  > When pulling the sky down the current screen can shift down a bit but it
+  > should be more of a parallax. or it could even be re-angled as we are
+  > shifting our perspective up
+
+  The app follows at 0.3 of the sky's movement (`@sky_parallax`) and shrinks
+  by up to 12% (`@sky_recede`), as if the view tips up from the ground to the
+  stars. The "re-angled" perspective idea hasn't been tried.
+- **A soft lower edge.** "The sky transition also needs to be a soft gradient
+  of some kind." The sky's bottom edge is a mist of its darkest blue that
+  fades into the sky and over the app below, with a line of blue cloud along
+  the edge (`mist-sky.svg`, `edge-sky.svg`). It's never a hard line.
+- **Constellations, no labels.** There's one per switch: Wi-Fi, Bluetooth,
+  Tailscale, NervesHub, in a 2×2 grid. Each is drawn in the shape of its icon,
+  with lines, a glow behind the stars, and the stars:
+
+  > we could make glowing constellation-looking icons for wifi and bluetooth,
+  > tailscale's logo translates into stars pretty well too.
+
+  > the constellation for nerveshub […] doesn't relate to the Nerves N logo at
+  > all so it doesn't make any sense […] I'd prefer the segmented N shape.
+
+  A constellation must read as its logo. Abstract star patterns aren't
+  enough.
+- **On is lit, off is dim.** When on: lilac lines, candle glow, bone stars.
+  When off: everything in dusky violet, faint. A tap on one flips it. A faint
+  fixed starfield (seeded, so it doesn't shimmer between frames) fills the
+  rest.
+
+## The inventory (drag up)
+
+- **A dark circle swells up from the bottom edge.** It grows from nothing
+  until it just covers the panel, and its centre rises from the bottom edge to
+  the middle as it grows. It opens over 300 px of travel.
+
+  > The app orb is good but should expand from the bottom of the display, not
+  > the middle.
+- **Icons only.** The apps sit in a ring from twelve o'clock (ring radius 124,
+  56 px icons), each lit in its own tint. A small lilac dot under one marks
+  the current app.
+
+  > The app icons in the app drawer look weird and like a mix of blocks and
+  > circles. We should do only icons because the density with labels is
+  > terrible and hard to read.
+- **A tap opens the nearest icon within 50 px.** The circle closes as the app
+  opens.
+
+## Letting go of a pull
+
+This applies to both the sky and the inventory.
+
+> If I release it halfway it tends to just stay there instead of finishing or
+> reverting. It should finish if past 40% or something like that.
+
+- **Past 40% it finishes; otherwise it reverts** (`@open_at`). For closing,
+  the mirror applies: it closes once pulled back past 40%.
+- **It must never stay half open.** If no release arrives within 1 s of the
+  last move (`@drag_timeout`), the pull settles as if released. Touch
+  releases do go missing.
+- **A drag locks to one axis.** It can open the sky or the inventory, or turn
+  the page, never two at once.
+
+The "stuck orb" was in part an Emerge bug: an element mounted during a pull
+skipped its easing, and the DRM presenter could drop that frame. The fix was
+to keep the inventory mounted at all times, hidden at scale 0. See
+EMERGE-ISSUES.md.
+
+## Colour
+
+`HelloWatch.Clock.Palette` holds every colour, and nothing outside it uses a
+literal:
+
+| Use | Names |
+|---|---|
+| Base of every backdrop, top to bottom | `twilight` {14,22,58} → `abyss` {5,8,26} |
+| Darker night (inventory, moon dark sides) | `night`, `midnight`, `shadow` |
+| Text and moonlight | `bone` {240,230,210} |
+| Labels, captions, ornaments | `lilac` {196,164,246}, `dusk` |
+| Accents | `candle` (warm amber), `moss`, `rose`, `teal`, `blue`, `cork` |
+
+> Make the background colors mild gradients from a dark blue. Essentially make
+> a few really big gradients so we get that cloudy effect.
+
+- **Clouds.** Every view has the same dark-blue base gradient, with two layers
+  of very large, soft white radial gradients on top (`clouds-a.svg`,
+  `clouds-b.svg`) at 32% and 24% strength.
+- **One tint per view.** Each view tints its two cloud layers its own way, so
+  each app has a mood without having its own background colour:
+
+  | View | Clouds |
+  |---|---|
+  | clock | lilac, blue |
+  | alarms | candle, blue |
+  | timers | teal, lilac |
+  | stopwatch | moss, blue |
+  | battery | teal, blue |
+  | network | moss, teal |
+  | sensors | rose, lilac |
+  | moon | bone, blue |
+  | tailscale | rose, blue |
+  | sky | blue, teal |
+- **The panel is AMOLED,** and the base gradient is nearly black, so it's cheap
+  to show.
+- **Status colour is sparing.** Rose means low battery or recording. Moss,
+  candle and rose fill the flask by charge level, and lilac fills it while
+  charging.
+
+## Type
+
+> Find a more humane font.
+
+- **Macondo** (a calligraphic display face) is for page titles, big numbers,
+  the face's day line and the battery percentage.
+- **Alegreya Sans** is for everything else. Use regular for values, medium
+  for emphasis (the recording timer, digits), and italic for labels and
+  captions.
+
+Both are OFL-licensed and live in `priv/fonts`.
+
+Readability was a complaint: "everything is unreadably small". The current
+sizes are:
+
+| Text | Size |
+|---|---|
+| Titles | 38 px |
+| Values | 28 px |
+| Headline values | 56 px |
+| Body lines | 24 px |
+| Labels | 18 px italic |
+| Captions | 22 px italic |
+| Faint battery figure on the face | 96 px |
+
+Don't go smaller without checking on the watch.
+
+## Text follows the round panel
+
+> the text layouts are boxy in the various views […] We should layout along
+> the curve of the display to whatever extent we can
+
+> You didn't align the text with the left-hand side curve. You centered it.
+
+The Arc and Pages modules handle this (`HelloWatch.Clock.Arc`,
+`HelloWatch.Clock.Pages`):
+
+- **Titles curve along the top rim** in Macondo, with a sparkle just past each
+  end. They read clockwise with the glyph tops outward.
+- **An optional caption curves along the bottom rim** in italic lilac. It reads
+  counterclockwise with the glyphs upright, so both rims read left to right.
+  The caption holds a page's secondary detail, like "Charging · 4.27 V" or
+  "6% lit · full in 12 days".
+- **Rows start at the panel's left edge where they sit.** Each row is indented
+  to where the circle's left side is at that height, so a block of text hugs
+  the left curve like a margin. **Rows are not centred.** The owner corrected
+  this explicitly.
+- **Text shrinks to fit the chord.** Each row is sized down until it fits the
+  chord at its height (`Arc.fit/5`, 30 px margin each side), and never below
+  12 px.
+- **Glyph widths come from the TTF.** Emerge can't measure text, so `Arc`
+  reads the advance widths from the font files at compile time. A port to a
+  framework that measures text, or draws text on a path, can drop that and
+  keep the layout rules.
+- **Long, useless data is dropped.** The network page shows one IPv4 address
+  per interface. IPv6 addresses were unreadable at a useful size.
+
+## The face
+
+- **The hour markers are the twelve phases of the moon,** full at twelve and
+  new at six. Tonight's real phase is drawn bigger, in a faint candle halo.
+  Dusk dots mark the minutes.
+- **The minute hand is a wand.** It's bone-coloured with a sparkle at the tip.
+  The hour hand is shorter and has a lilac dot at its tip.
+- **The hub is a small crescent moon** in a candle halo.
+- **There's no second hand.** The face redraws once a minute, on the minute.
+- **The day line** is in Macondo lilac, for example "Frigg's day · 16".
+- **The battery percentage sits behind everything,** large and faint (bone at
+  10% alpha, rose at 22% when it's 20% or less):
+
+  > Just have a more faded version of that percentage in the back of the main
+  > screen.
+
+  The details live on the Battery page instead.
+- **A few fixed stars and three lilac sparkles** are scattered clear of the
+  hands.
+
+## The other apps
+
+- **Battery.** The owner wanted to see the charge left, not the power draw.
+  The page shows a round-bottomed potion flask filled to the charge, with
+  bubbles while charging, and the percentage in Macondo. The caption gives the
+  status and voltage. The flask is the one "potion" that survived, on its own
+  page as asked.
+- **Moon.** Tonight's moon, large, with a faint rim so a thin crescent still
+  shows the whole disc. Below it is the phase name. The caption shows how much
+  is lit and the days until the full moon.
+- **Network and Sensors** are rows of label and value. The heart rate is the
+  sensors page's headline value.
+- **Tailscale** shows its state. A tap while logged out shows a QR code of the
+  login URL, sized to the largest square that fits between the title and the
+  caption.
+- **Alarms, Timers and Stopwatch** are drafts (2026-10-15) that the owner
+  hasn't tried on the watch yet:
+  - They lay out fixed rectangles and hit-test taps against the same
+    rectangles, with 8 px of slop (`HelloWatch.Clock.Widgets`).
+  - Buttons are pills, and digits sit in fixed-width cells so times don't
+    jitter.
+  - The stopwatch shows hundredths in lilac and redraws every 40 ms while
+    running. It keeps the screen on, as asked.
+  - An alarm or timer that rings wakes the screen and opens its app under an
+    opaque cover with a pulsing ring, saying what rang. It buzzes every 2 s
+    until a tap or the top button stops it, or a minute passes.
+
+## Overlays
+
+> Include UI that slides in indicating recording state and duration lapsed.
+
+- **The recording badge.** Holding the bottom button records a voice memo. A
+  wine-coloured pill slides down from the top edge, with a pulsing rose dot
+  and the elapsed time. When the button is released it slides back up, still
+  showing the final time. It stays mounted off screen, so it eases in and out
+  and never pops.
+- **The ringing cover** sits above everything, including the sky and the
+  inventory.
+
+## Input
+
+- **Taps and drags.**
+  - A touch that moves 12 px becomes a drag and locks to its main axis.
+  - A touch that moves less than 25 px is a tap.
+  - Only the latest drag position matters. Drag messages that queue up during
+    a render are collapsed.
+- **The touch that wakes the screen doesn't press anything.** Touches and taps
+  are ignored while the screen is off, apart from waking it.
+- **Top button.**
+  - It turns the screen off or on, debounced to 250 ms.
+  - While something rings, it dismisses it instead.
+- **Bottom button.** It records while held.
+
+## Rendering as a design constraint
+
+The battery is weak and the panel holds its own image, so a frame is drawn
+only when something visible changes:
+
+| When | What redraws |
+|---|---|
+| Face | once a minute |
+| Battery and network views | every 5 s |
+| Sensors view | as readings arrive, at most every 200 ms |
+| Timers | every second |
+| Running stopwatch | every 40 ms |
+| Drags | each move |
+| Animations | while they run |
+| Screen off | nothing |
+
+> can we also control the refresh to be less frequent even when on? adapting
+> to activity?
+
+- **Dimming and sleep.** After 15 s untouched the screen dims to 25%. After
+  2 min it goes off, and the watch may suspend. Any touch resets both timers.
+  A running stopwatch or something ringing keeps it on and bright.
+- **Looping animations are costly** because they keep frames coming. The
+  recording dot pulses only while the badge is shown. Nothing on the resting
+  face animates.
+- **Interaction may be heavy, rest must be idle.** Transitions and pulls ran at
+  20–27 frames a second on the GPU build, which the owner judged "good overall
+  but not fully smooth". The work is single-threaded in Emerge: tree patch,
+  layout and draw.
+
+What kept it fast enough:
+
+- **Stable keys.** The app, the sky and the inventory keep the same keys from
+  the first frame of a pull to the last. A new key rebuilds the whole subtree,
+  which cost 80–86 ms a frame.
+- **Easing in place.** Settles ease the existing elements to new attributes
+  (`Animation.change`) rather than remounting them with enter animations.
+- **Few layers.** Glows are flat halo discs, not blurs, and the clouds are
+  pre-made SVGs tinted at draw time.
+
+## Emerge workarounds a port can drop
+
+These shaped the code, not the design. A port to a framework without these
+gaps can do the simple thing:
+
+- **The concave edge is faked.** Emerge has no concave shapes or clip paths.
+  The incoming app comes in with a straight edge, and the current app is drawn
+  again on top, clipped to a convex arc. That copy doesn't move, so it looks
+  identical to the app beneath.
+- **Positions use padding, not transforms.** Emerge doesn't clip a transformed
+  element's layers to a rounded parent, and every view is clipped while it
+  slides.
+- **Glows are halo discs.** For the same reason: shadows escape the clip.
+- **The palette swaps red and blue on the framebuffer renderer,** so frames can
+  be copied to `/dev/fb0` without per-pixel conversion. The DRM renderer
+  draws true colours.
+- **Icons and ornaments are white SVGs tinted with `Svg.color`,** so one file
+  serves every tint.
+
+## Where things are
 
 | | |
 |---|---|
-| SoC / GPU | SDM429W, Adreno 504 (`oxili` power domains, off at idle) |
-| Kernel DRM | `msm` module (DPU/MDP5 + DSI with the 12 nm PHY), loaded by `nerves_uevent` after boot; SimpleDRM shows the bootloader's framebuffer until then |
-| Panel | `panel-mobvoi-rover` (RM69330 or ICNA3310 AMOLED), **DSI command mode**, TE pin wired, one mode: 454×454 at 60 |
-| Nodes | `/dev/dri/card1`, `/dev/dri/renderD128`, no `card0` (the index is taken by SimpleDRM before msm replaces it) |
-| fbdev | `msm` fbdev emulation on `/dev/fb0` (`msmdrmfb`), XRGB8888, pitch 1920, owned by fbcon, plane 0 / `sspp_8` |
-| Backlight | `/sys/class/backlight/1a94000.dsi.0`, 0–255, sent to the panel as a DCS brightness command |
-| Touch | `Zinitix Capacitive TouchScreen`, evdev multitouch (`input2`) |
-| Buttons | `pm8941_pwrkey` (`input0`), `gpio-keys` (`input1`, one key labelled "Volume Up") |
-| Haptics | `gpio-vibrator` (`input3`, force-feedback) |
-| Userspace libs | `libudev` only: no libdrm, libgbm, libEGL, GLES, Mesa, libinput, xkbcommon, fontconfig |
-
-What that means for rendering:
-
-- **Command mode** means the panel keeps its own frame memory. A frame goes
-  over DSI only when something is committed, and a static screen costs no
-  transfers. There's no VRR to drive, and an app's "frame rate" is how
-  often it commits.
-- **No partial updates.** Upstream MSM sends the full 454×454 frame on every
-  commit, so fewer commits matter more than smaller damage rectangles.
-- **Off is off.** Blanking (`/sys/class/graphics/fb0/blank` = 4) gives DPMS
-  Off, and MDSS, the display controller and DSI are runtime-suspended.
-- **Display node path.** Point anything that opens DRM at `/dev/dri/card1`
-  (or a `/dev/dri/by-path/` alias). Emerge defaults to `card0`, which doesn't
-  exist here.
-
-## How hello_watch draws
-
-`HelloWatch.Clock` is an Emerge viewport (option B below):
-
-- **Rendering.** The viewport renders headless with the raster renderer
-  (`config :emerge, compiled_backends: []` on the target) and sends packed
-  RGB888 frames to `HelloWatch.Clock.Display`. It rerenders only when the
-  screen changes: every second on the face, every 5 s on the network page,
-  and as readings arrive on the sensor page. It never rerenders with the
-  screen off.
-- **Display.** `Display` writes each new frame to `/dev/fb0`, swapping to
-  the framebuffer's B, G, R byte order and padding rows to its stride, and
-  skips frames identical to the last one.
-  - Screen off fades the backlight to 0 in 10 steps, then blanks.
-  - Wake waits for the next frame before unblanking, so the old frame never
-    flashes, then fades back up.
-- **Input.** `Clock.Touch` and `Clock.Button` read evdev and send `:touch`,
-  `{:swipe, dir}` and `:toggle_display` to the viewport. The root element
-  also has Emerge's `on_swipe_left/right`, for a windowed run on a host.
-- **Release.** `mix.exs` keeps only the aarch64 raster NIF; the others are
-  15-25 MB each.
-
-Measured on nerves-0453 (2026-10-12):
-
-| | |
-|---|---|
-| Pixels on `/dev/fb0` | correct (accent centre, black corners, white 12 o'clock tick) |
-| BEAM CPU, face on, 1 frame/s | 555 ms per 10 s, about 55 ms per frame (render + convert + write) |
-| BEAM CPU, screen off | 6 ms per 5 s |
-| Screen off | blank 4, brightness 0, DPMS Off |
-| Wake | blank 0, brightness 255, DPMS On |
-
-The conversion to B, G, R in Elixir is likely a large share of those 55 ms
-(not yet profiled). Dropping the second hand when nobody is looking would
-cut the frames 60×.
-
-## Option A: Emerge's DRM backend
-
-This is the nerves_phone setup:
-
-```elixir
-config :emerge, compiled_backends: [drm: [:opengl]]
-# viewport options
-backend: :drm, drm_card: "/dev/dri/card1", hw_cursor: false
-```
-
-### What the NIF needs
-
-The prebuilt `libemerge_skia-v0.4.2-nif-2.15-aarch64-unknown-linux-gnu--drm.so`
-was downloaded by `mix deps.get`. Its `NEEDED` list is:
-
-```
-libgbm.so.1  libstdc++.so.6  libgcc_s.so.1  libm.so.6  libc.so.6  ld-linux-aarch64.so.1
-```
-
-`libEGL.so.1` (and through it GLES) is loaded with `dlopen` at runtime.
-`libstdc++` is in the system; **`libgbm` and `libEGL` aren't,** so today the
-NIF wouldn't even load on the watch. KMS (the `drm` crate does its own
-ioctls) and evdev input (the `evdev` crate) need no extra libraries. Fonts
-come from registered assets, so there's no fontconfig dependency.
-
-### Raster on DRM still needs EGL
-
-The viewport docs list `rendering_api: [raster: [present: :cpu]]` for DRM,
-and nerves_phone uses it with a comment saying it renders "into a KMS dumb
-buffer". In 0.4.2's source, though, the DRM presenter reads the option and
-drops it: `let _requested_raster_present = config.raster_present;`
-(`native/emerge_skia/src/backend/drm/gl.rs:2608`). Every DRM frame is
-presented through EGL on a GBM surface with `eglSwapBuffers`. With
-`:raster`, Skia draws on the CPU and the result is uploaded as a GL texture.
-So even CPU rendering needs a working EGL/GBM stack on the watch.
-
-The system would need Buildroot's `mesa3d` with GBM, EGL and GLES2, and one
-of:
-
-- the **freedreno** Gallium driver: real GPU, Adreno 504 is a5xx and supported
-  by freedreno. nerves_phone saw Emerge's OpenGL path on the Adreno 506 spin
-  a core at 100% and wedge its render thread. That was the same driver
-  family, which is a warning sign, though the cause wasn't pinned down.
-- **kmsro + a software rasteriser** (softpipe/llvmpipe) presenting to the
-  msm display. This avoids the GPU but adds a software GL copy for every
-  frame. **Unverified** that it works with msm's display-only path.
-
-Either way it means a new system release and a bigger rootfs.
-
-### What Option A gets us
-
-- **Input built in.** The DRM backend reads evdev directly. A multitouch
-  screen with `ABS_MT_POSITION_*` and `BTN_TOUCH` is treated as direct touch:
-  one pointer, with presses taken from `BTN_TOUCH`. Emerge's
-  `Event.on_press`, `Event.on_swipe_left/right/up/down`, scrolling and
-  sliders would all work. **Unverified** that the Zinitix axes map 1:1 to the
-  454×454 panel without a calibration step.
-- **Real page flips** with TE and vsync pacing. Unchanged scenes aren't
-  redrawn.
-- **The same app on the host,** in a Wayland window.
-
-### Open problems with Option A
-
-- **Screen off.** Emerge has no DPMS or "display off" API: the only CRTC
-  `ACTIVE` handling in the DRM backend is a probe and restore. While Emerge
-  holds DRM master, our current `/dev/fb0` blanking goes through the fbdev
-  emulation and won't control the CRTC. The backlight's `bl_power` = 4 only
-  sets panel brightness to 0, which leaves MDSS and DSI powered. Real
-  screen-off would need one of these:
-  - stopping the viewport, so it releases master, then blanking;
-  - an Emerge feature that sets `ACTIVE` = 0;
-  - accepting a dark but powered pipeline.
-
-  This needs a test.
-- **Idle wakeups.** The DRM render loop rechecks connectors every 750 ms
-  (`hotplug_interval`, `gl.rs:2613`), even when nothing changes. That's about
-  1.3 wakeups/s for a watch that otherwise sleeps. It's small, but it's
-  periodic, and it would also need handling around suspend.
-- **Buttons aren't UI input.** Emerge reads the keyboard-like devices too,
-  but the power key and side button belong to our own handler, as nerves_phone
-  does with `input_event` alongside Emerge. evdev hands every event to every
-  reader, so both can read the same device.
-- **The touch that wakes the screen** shouldn't press anything. nerves_phone
-  puts a full-screen catcher in front while the screen is off; the same
-  applies here.
-- **Device node:** set `drm_card: "/dev/dri/card1"`.
-
-## Option B: Emerge headless raster, our own presenter
-
-```elixir
-config :emerge, compiled_backends: []   # minimal raster artifact, no GPU/desktop deps
-# viewport options
-backend: :headless, rendering_api: :raster, width: 454, height: 454,
-headless: [mode: :binary, target: frame_sink_pid, pixel_format: :rgb888]
-```
-
-- **The NIF** is the "minimal raster" artifact (the NameBadge profile):
-  Skia on the CPU, embedded FreeType, SVG and images, no EGL/GBM/Wayland.
-  Built for `aarch64-unknown-linux-gnu`. It only needs libstdc++ and glibc,
-  which the system has. (Inferred from the build docs and Cargo features;
-  that artifact hasn't been downloaded and checked yet.)
-- **Frames** arrive as `{:emerge_skia_frame, %VideoInterop.Frame{}}` with
-  packed RGB888 (`stride = 454 * 3`), only when the viewport rerenders.
-  Without `target_fps` there's no frame cadence, which is exactly what a
-  command-mode panel wants. The sink converts to XRGB8888 with the 1920-byte
-  pitch and `pwrite`s to `/dev/fb0`, which is today's `Display.encode/3`.
-  Skipping frames identical to the last one is cheap.
-- **Screen off and on** keeps working as today (fbdev `blank`), and the MDSS
-  and DSI power down.
-- **Input is the cost.** Headless viewports have no input source, and Emerge
-  has no public API to inject pointer events: `EmergeSkia.TestHarness` is
-  private (`@moduledoc false`) and only moves the cursor. So:
-  - `Event.on_press` and `on_swipe_*` won't fire on the watch.
-  - Our `Touch` and `Button` processes keep detecting taps and swipes and
-    send plain messages to the viewport (`handle_info/2` →
-    `Viewport.rerender/1`).
-  - The UI is laid out with Emerge, but hit-testing is ours. For a watch with
-    a few full-screen pages and swipes, that's manageable; for buttons or
-    lists, it isn't.
-- **Host development:** the same viewport can run on the host with
-  `backend: :wayland` and real input, or headless in tests, where frames can
-  be checked with `EmergeSkia.render_to_png/2`.
-- **Costs:** an extra copy and conversion per frame in Elixir (454×454×4 ≈
-  824 KB). That's fine at a few frames per second and a minute-resolution
-  face, but it rules out smooth animation.
-
-## Comparison
-
-| | A: DRM backend | B: headless raster → fbdev |
-|---|---|---|
-| System change | Mesa (GBM, EGL, GLES, driver) | none |
-| Works today | no | yes (pending a test) |
-| Touch, gestures, buttons in UI | Emerge | ours, via messages |
-| Rendering | GPU or CPU + GL upload | CPU |
-| Presentation | KMS page flip, vsync/TE | fbdev write → driver damage flush |
-| Screen off | open question (no DPMS API; master held) | fbdev `blank`, as today |
-| Idle wakeups from UI stack | 750 ms hotplug poll | none |
-| Animation | yes | not really |
-| Risk | freedreno/Emerge GL hang seen on FP3 | input reimplemented |
-
-## Recommendation
-
-**Start with B.** It needs no system release, keeps the power behaviour we
-already measured, and moves drawing (faces, the power meter, text) to Emerge,
-which is most of the benefit. Keep the existing touch, swipe and button code
-and route it into the viewport as messages.
-
-**Revisit A** if the UI grows real widgets (lists, buttons, scrolling), or
-Emerge gains one of:
-
-- a CPU or dumb-buffer DRM presenter that doesn't need EGL;
-- a display-power API;
-- an input-injection API for headless viewports.
-
-Any of these would remove the main obstacles; worth asking upstream.
-
-## To verify on the watch
-
-Done: the raster NIF loads on the system (it links only libstdc++, libgcc_s
-and glibc); a 454×454 frame through `Display` keeps up with a 1 Hz face.
-
-Still open:
-
-1. Touch, swipes and the button on the new UI, by hand.
-2. For option A only, after adding Mesa:
-   - Can Emerge's DRM backend take master on `card1` while fbcon owns the
-     plane?
-   - Do the touch coordinates line up?
-   - What happens to MDSS and DSI power when the screen "turns off"?
+| Viewport, state, gestures, transitions, timings | `lib/hello_watch/clock.ex` |
+| Colours | `clock/palette.ex` |
+| Cloudy backdrops and tints | `clock/backdrop.ex` |
+| Face | `clock/face.ex` |
+| Moons and sparkles | `clock/moon.ex` |
+| Page layout along the curve | `clock/pages.ex`, `clock/arc.ex` |
+| Sky and its switches | `clock/sky.ex`, `clock/controls.ex` |
+| Inventory | `clock/inventory.ex` |
+| Battery, moon and Tailscale pages | `clock/battery_page.ex`, `clock/moon_app.ex`, `clock/tailscale_page.ex` |
+| Alarm, timer and stopwatch drafts | `clock/alarms_app.ex`, `clock/timers_app.ex`, `clock/stopwatch_app.ex`, `clock/widgets.ex`, `clock/ringing.ex` |
+| Recording badge | `clock/recording.ex` |
+| Touch and buttons | `clock/touch.ex`, `clock/button.ex` |
+| Art | `priv/images/*.svg` |
+| Fonts | `priv/fonts` |
