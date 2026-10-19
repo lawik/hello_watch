@@ -19,3 +19,6 @@ config :nerves_runtime,
        "a.nerves_fw_platform" => "host",
        "a.nerves_fw_version" => "0.0.0"
      }}
+
+# Alarms and timers are kept here rather than on the watch's /root.
+config :hello_watch, data_dir: Path.expand("../_build/data", __DIR__)

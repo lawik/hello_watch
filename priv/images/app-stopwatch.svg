@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+<defs><filter id="g" x="-50%" y="-50%" width="200%" height="200%">
+<feGaussianBlur stdDeviation="3"/></filter></defs>
+<g fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+<g filter="url(#g)" opacity="0.8"><circle cx="32" cy="36" r="16"/><path d="M27 13h10M32 13v7"/><path d="M45 21l3-3"/><path d="M32 36l6-7"/></g>
+<circle cx="32" cy="36" r="16"/><path d="M27 13h10M32 13v7"/><path d="M45 21l3-3"/><path d="M32 36l6-7"/>
+</g>
+</svg>

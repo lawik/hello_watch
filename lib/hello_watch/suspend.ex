@@ -5,7 +5,8 @@ defmodule HelloWatch.Suspend do
   The clock reports the screen going off and on. Once it has been off for
   `@grace`, and nothing below holds the watch awake, this freezes the system
   through `/sys/power/state`. Only the power key, the RTC alarm and the
-  charger wake it (see POWER-MANAGEMENT.md), so:
+  charger wake it (see POWER-MANAGEMENT.md); the RTC is set for the soonest
+  alarm or timer (see HelloWatch.Wakeup). So:
 
     * it stays awake on USB power, where suspending saves nothing and would
       cut off a cable-attached session;
@@ -16,7 +17,9 @@ defmodule HelloWatch.Suspend do
 
   Wi-Fi and Bluetooth are soft blocked (rfkill) for each suspend and
   unblocked after it, as connected Wi-Fi keeps drawing current while the
-  watch sleeps. A radio that was already off stays off.
+  watch sleeps. A radio that was already off stays off. The USB controller
+  is unbound meanwhile too: with no cable it keeps its PHY and clocks on,
+  about 10 mA, and the watch only suspends off USB power.
 
   The `/sys/power/wakeup_count` handshake makes a wake event that arrives
   while deciding cancel the suspend instead of being lost.
@@ -34,6 +37,7 @@ defmodule HelloWatch.Suspend do
   @ssh_port 22
   @rfkill "/sys/class/rfkill"
   @radios ["wlan", "bluetooth"]
+  @usb {"/sys/bus/platform/drivers/msm_hsusb", "78db000.usb"}
 
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
 
@@ -91,8 +95,12 @@ defmodule HelloWatch.Suspend do
 
   defp suspend do
     blocked = radios_off()
+    usb = usb_off()
+    HelloWatch.Wakeup.arm()
     result = freeze()
+    if usb, do: usb_on()
     Enum.each(blocked, &File.write(Path.join(&1, "soft"), "0"))
+    HelloWatch.Wakeup.resumed()
     result
   end
 
@@ -118,6 +126,19 @@ defmodule HelloWatch.Suspend do
         File.read(Path.join(path, "soft")) == {:ok, "0\n"},
         File.write(Path.join(path, "soft"), "1") == :ok,
         do: path
+  end
+
+  # Unbinds the USB controller if it's bound, returning whether it was.
+  defp usb_off do
+    {driver, device} = @usb
+
+    File.exists?(Path.join(driver, device)) and
+      File.write(Path.join(driver, "unbind"), device) == :ok
+  end
+
+  defp usb_on do
+    {driver, device} = @usb
+    File.write(Path.join(driver, "bind"), device)
   end
 
   defp on_usb? do

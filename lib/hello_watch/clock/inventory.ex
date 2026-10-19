@@ -19,6 +19,9 @@ defmodule HelloWatch.Clock.Inventory do
   # Each app's icon is priv/images/app-<app>.svg, lit in its tint.
   @tints %{
     clock: :bone,
+    alarms: :candle,
+    timers: :teal,
+    stopwatch: :moss,
     battery: :teal,
     network: :moss,
     sensors: :rose,
@@ -60,13 +63,15 @@ defmodule HelloWatch.Clock.Inventory do
     [Transform.scale(scale), Transform.move_y(round(@center - @radius + (1 - scale) * @center))]
   end
 
-  @doc "The app whose token is at `{x, y}` on the panel, among `apps`, or nil."
+  @doc "The app whose token is nearest `{x, y}` on the panel, among `apps`, or nil."
   def hit(apps, {x, y}) do
-    apps
-    |> positions()
-    |> Enum.find_value(fn {app, {px, py}} ->
-      if :math.sqrt((x - px) ** 2 + (y - py) ** 2) <= @reach, do: app
-    end)
+    {app, distance} =
+      apps
+      |> positions()
+      |> Enum.map(fn {app, {px, py}} -> {app, :math.sqrt((x - px) ** 2 + (y - py) ** 2)} end)
+      |> Enum.min_by(&elem(&1, 1))
+
+    if distance <= @reach, do: app
   end
 
   # Token centres on the panel, round the ring from twelve o'clock.

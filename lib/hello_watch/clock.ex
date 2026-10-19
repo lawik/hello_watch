@@ -2,18 +2,25 @@ defmodule HelloWatch.Clock do
   @moduledoc """
   The watch's views, as an Emerge viewport. Time defaults to UTC.
 
-  The things the watch is for are apps: the clock face, battery, network,
-  sensors, the moon and Tailscale. Around every app are two more places:
+  The things the watch is for are apps: the clock face, alarms, timers, a
+  stopwatch, battery, network, sensors, the moon and Tailscale. Around
+  every app are two more places:
 
     * **The sky,** pulled down from above: the watch's global switches as
       constellations (HelloWatch.Clock.Sky). The view shifts up to show it.
-    * **The inventory,** pulled up from below: a dark circle that grows from
-      the centre with the apps in a ring (HelloWatch.Clock.Inventory). A tap
+    * **The inventory,** pulled up from below: a dark circle that swells up from
+      the bottom edge with the apps in a ring (HelloWatch.Clock.Inventory). A tap
       opens one.
 
   Holding the bottom button records a voice memo (HelloWatch.Recorder), and
   a badge with its running time slides down from the top meanwhile
   (HelloWatch.Clock.Recording).
+
+  An alarm or timer that rings (HelloWatch.Alarms, HelloWatch.Timers) wakes
+  the screen, opens its app under a cover saying what rang
+  (HelloWatch.Clock.Ringing) and buzzes until a tap or the top button stops
+  it, or `@ring_timeout` passes. The screen also stays on while the
+  stopwatch runs.
 
   Dragging sideways moves through the most recently used apps: right goes
   back to older ones, left forward again. The next app slides in over the
@@ -29,7 +36,7 @@ defmodule HelloWatch.Clock do
       and on and sets its brightness, from `config/2`; going dark powers the
       panel and display pipeline down.
     * `:framebuffer` (the default): headless on the CPU, each frame sent to
-      `HelloWatch.Clock.Display`, which writes it to `/dev/fb0` (see UI.md).
+      `HelloWatch.Clock.Display`, which writes it to `/dev/fb0` (see DISPLAY.md).
 
   Started with `display: nil` and `backend: :wayland` it opens a window
   instead, for working on the UI on a host.
@@ -47,6 +54,7 @@ defmodule HelloWatch.Clock do
   require Logger
 
   alias HelloWatch.Clock.{
+    AlarmsApp,
     Backdrop,
     BatteryPage,
     Controls,
@@ -58,14 +66,17 @@ defmodule HelloWatch.Clock do
     Pages,
     Palette,
     Recording,
+    Ringing,
     Sky,
-    TailscalePage
+    StopwatchApp,
+    TailscalePage,
+    TimersApp
   }
 
-  alias HelloWatch.{Power, Recorder, Sensors, Tailscale}
+  alias HelloWatch.{Power, Recorder, Sensors, Tailscale, Vibrator}
 
   # The inventory's ring, from twelve o'clock.
-  @apps [:clock, :battery, :network, :sensors, :moon, :tailscale]
+  @apps [:clock, :alarms, :timers, :stopwatch, :battery, :network, :sensors, :moon, :tailscale]
 
   # The hub delivers every event to a single reader, so one stream serves the
   # whole app: charge alone while the face is up, plus the rest on the sensor
@@ -77,6 +88,13 @@ defmodule HelloWatch.Clock do
   # The brightness while dimmed on DRM, as a share of the panel's range.
   @dim_brightness 0.25
   @idle_timeout :timer.minutes(2)
+  # How long an alarm or timer rings unanswered, and its buzz, repeated
+  # every `@buzz_every`.
+  @ring_timeout :timer.minutes(1)
+  @buzz [300, 150, 300, 150, 300]
+  @buzz_every 2000
+  # How often the running stopwatch redraws while shown.
+  @stopwatch_frame 40
   @power_interval :timer.seconds(5)
   # How often the Tailscale view rereads tailscaled, to catch the login URL
   # appearing and the login completing, and how often the sky rereads the
@@ -198,7 +216,14 @@ defmodule HelloWatch.Clock do
         # seconds it has run, which the badge keeps showing as it leaves.
         recording: nil,
         record_seconds: 0,
-        record_ref: nil
+        record_ref: nil,
+        # The alarm open for editing in the alarms app, the stopwatch, and
+        # the ticks that redraw the timers and the stopwatch while shown.
+        alarm_edit: nil,
+        stopwatch: StopwatchApp.new(),
+        app_ref: nil,
+        # The alarm or timer ringing: %{kind:, item:, ref:}.
+        ringing: nil
       }
       |> schedule_tick()
       |> schedule_power()
@@ -271,12 +296,16 @@ defmodule HelloWatch.Clock do
         swipes(state) ++
         Enum.map(
           [Inventory.render(@apps, state.app, at, ms) | layers] ++
+            ringing(state.ringing) ++
             [Recording.render(state.record_seconds, state.recording != nil)],
           &Nearby.in_front/1
         ),
       child
     )
   end
+
+  defp ringing(nil), do: []
+  defp ringing(ringing), do: [Ringing.render({ringing.kind, ringing.item})]
 
   # How far open the inventory is, and with `ms`, easing there. It stays
   # mounted while closed, shrunk to nothing and hidden: Emerge (0.4.2) skips
@@ -356,6 +385,14 @@ defmodule HelloWatch.Clock do
 
   defp view(state, :clock),
     do: Face.render(local_time(state), Moon.phase(DateTime.utc_now()), battery(state))
+
+  defp view(state, :alarms),
+    do: AlarmsApp.render(AlarmsApp.alarms(), state.alarm_edit, DateTime.utc_now())
+
+  defp view(_state, :timers), do: TimersApp.render(TimersApp.timers(), DateTime.utc_now())
+
+  defp view(state, :stopwatch),
+    do: StopwatchApp.render(state.stopwatch, System.monotonic_time(:millisecond))
 
   defp view(state, :battery), do: BatteryPage.render(battery(state), :battery)
   defp view(_state, :network), do: Pages.render("Network", network_rows(), :network, hostname())
@@ -533,6 +570,8 @@ defmodule HelloWatch.Clock do
     {:noreply, if(state.on, do: Viewport.rerender(state), else: state)}
   end
 
+  def handle_info(:toggle_display, %{ringing: %{}} = state), do: {:noreply, dismiss(state)}
+
   def handle_info(:toggle_display, state) do
     now = System.monotonic_time(:millisecond)
 
@@ -545,6 +584,8 @@ defmodule HelloWatch.Clock do
   end
 
   def handle_info({:tap, _at}, %{on: false} = state), do: {:noreply, state}
+
+  def handle_info({:tap, _at}, %{ringing: %{}} = state), do: {:noreply, dismiss(state)}
 
   # In the sky, a tap on a star flips its switch.
   def handle_info({:tap, at}, %{overlay: :sky, control_task: nil} = state) do
@@ -586,7 +627,59 @@ defmodule HelloWatch.Clock do
     {:noreply, read_tailscale(state)}
   end
 
+  def handle_info({:tap, at}, %{app: :alarms, overlay: nil} = state) do
+    editing = AlarmsApp.tap(AlarmsApp.alarms(), state.alarm_edit, at)
+    {:noreply, Viewport.rerender(%{state | alarm_edit: editing})}
+  end
+
+  def handle_info({:tap, at}, %{app: :timers, overlay: nil} = state) do
+    TimersApp.tap(TimersApp.timers(), at)
+    {:noreply, state |> schedule_app_tick() |> Viewport.rerender()}
+  end
+
+  def handle_info({:tap, at}, %{app: :stopwatch, overlay: nil} = state) do
+    stopwatch = StopwatchApp.tap(state.stopwatch, at, System.monotonic_time(:millisecond))
+    state = %{state | stopwatch: stopwatch}
+    # Stopping it lets the screen dim and sleep again from here.
+    state = if StopwatchApp.running?(stopwatch), do: state, else: start_idle_timer(state)
+    {:noreply, state |> schedule_app_tick() |> Viewport.rerender()}
+  end
+
   def handle_info({:tap, _at}, state), do: {:noreply, state}
+
+  # An alarm or timer is due; see HelloWatch.Alarms and HelloWatch.Timers.
+  def handle_info({:ring, kind, item}, state) do
+    if state.ringing, do: Vibrator.stop()
+    state = if state.on, do: start_idle_timer(state), else: wake(state)
+    ref = make_ref()
+    send(self(), {:buzz, ref})
+    Process.send_after(self(), {:ring_timeout, ref}, @ring_timeout)
+    app = if kind == :alarm, do: :alarms, else: :timers
+
+    state =
+      %{state | ringing: %{kind: kind, item: item, ref: ref}, overlay: nil, alarm_edit: nil}
+      |> open_app(app)
+
+    {:noreply, Viewport.rerender(state)}
+  end
+
+  def handle_info({:buzz, ref}, %{ringing: %{ref: ref}} = state) do
+    Vibrator.pattern(@buzz)
+    Process.send_after(self(), {:buzz, ref}, @buzz_every)
+    {:noreply, state}
+  end
+
+  def handle_info({:buzz, _ref}, state), do: {:noreply, state}
+
+  def handle_info({:ring_timeout, ref}, %{ringing: %{ref: ref}} = state),
+    do: {:noreply, dismiss(state)}
+
+  def handle_info({:ring_timeout, _ref}, state), do: {:noreply, state}
+
+  def handle_info({:app_tick, ref}, %{app_ref: ref, on: true} = state),
+    do: {:noreply, state |> schedule_app_tick() |> Viewport.rerender()}
+
+  def handle_info({:app_tick, _ref}, state), do: {:noreply, state}
 
   def handle_info({:tailscale, ref}, %{tailscale_ref: ref, on: true, app: :tailscale} = state),
     do: {:noreply, read_tailscale(state)}
@@ -680,16 +773,20 @@ defmodule HelloWatch.Clock do
   def handle_info(:touch, %{on: true} = state), do: {:noreply, start_idle_timer(state)}
   def handle_info(:touch, state), do: {:noreply, wake(state)}
 
-  def handle_info(:dim, %{on: true, dimmed: false} = state),
-    do: {:noreply, panel(%{state | dimmed: true, dim_timer: nil}, :dim)}
+  def handle_info(:dim, %{on: true, dimmed: false} = state) do
+    if keep_on?(state),
+      do: {:noreply, %{state | dim_timer: nil}},
+      else: {:noreply, panel(%{state | dimmed: true, dim_timer: nil}, :dim)}
+  end
 
   def handle_info(:dim, state), do: {:noreply, state}
 
-  # The screen stays on while recording: suspending would end it.
-  def handle_info(:screen_timeout, %{on: true, recording: since} = state) when since != nil,
-    do: {:noreply, start_idle_timer(state)}
+  def handle_info(:screen_timeout, %{on: true} = state) do
+    if keep_on?(state) or state.recording != nil,
+      do: {:noreply, start_idle_timer(state)},
+      else: {:noreply, sleep(state)}
+  end
 
-  def handle_info(:screen_timeout, %{on: true} = state), do: {:noreply, sleep(state)}
   def handle_info(:screen_timeout, state), do: {:noreply, state}
 
   def handle_info({:swipe, _direction}, %{on: false} = state), do: {:noreply, state}
@@ -910,6 +1007,38 @@ defmodule HelloWatch.Clock do
     end
   end
 
+  # The screen stays on and bright while the stopwatch runs or something
+  # rings. It also stays on while recording, as suspending would end it.
+  defp keep_on?(state), do: StopwatchApp.running?(state.stopwatch) or state.ringing != nil
+
+  defp dismiss(state) do
+    Vibrator.stop()
+    %{state | ringing: nil} |> start_idle_timer() |> Viewport.rerender()
+  end
+
+  # The timers count down each second while shown, the running stopwatch
+  # faster. A new ref makes a tick already in flight a no-op.
+  defp schedule_app_tick(state) do
+    delay =
+      cond do
+        not state.on ->
+          nil
+
+        state.app == :timers and TimersApp.timers() != [] ->
+          1000 - rem(System.system_time(:millisecond), 1000)
+
+        state.app == :stopwatch and StopwatchApp.running?(state.stopwatch) ->
+          @stopwatch_frame
+
+        true ->
+          nil
+      end
+
+    ref = if delay, do: make_ref()
+    if ref, do: Process.send_after(self(), {:app_tick, ref}, delay)
+    %{state | app_ref: ref}
+  end
+
   defp safely(fun) do
     fun.()
   catch
@@ -1031,12 +1160,17 @@ defmodule HelloWatch.Clock do
 
   defp enter_page(state, :sensors), do: stream(state, @sensor_stream)
   defp enter_page(state, :tailscale), do: state |> enter_page(:clock) |> read_tailscale()
+
+  defp enter_page(state, app) when app in [:timers, :stopwatch],
+    do: state |> enter_page(:clock) |> schedule_app_tick()
+
   defp enter_page(%{sensor_port: nil} = state, _), do: stream(state, @idle_stream)
   defp enter_page(state, _), do: state
 
   # Drop the last readings on the way out: they would otherwise sit on the page
   # looking live when the stream that produced them is no longer running.
   defp leave_page(state, :sensors), do: %{stream(state, @idle_stream) | sensors: %{}}
+  defp leave_page(state, :alarms), do: %{state | alarm_edit: nil}
   defp leave_page(state, _), do: state
 
   # tailscale CLI calls take a moment on this CPU, so they run beside the

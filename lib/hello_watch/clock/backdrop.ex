@@ -17,6 +17,9 @@ defmodule HelloWatch.Clock.Backdrop do
   # Two cloud tints per view, and how strong each layer is.
   @tints %{
     clock: {:lilac, :blue},
+    alarms: {:candle, :blue},
+    timers: {:teal, :lilac},
+    stopwatch: {:moss, :blue},
     battery: {:teal, :blue},
     network: {:moss, :teal},
     sensors: {:rose, :lilac},

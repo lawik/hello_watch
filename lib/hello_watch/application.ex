@@ -29,6 +29,8 @@ defmodule HelloWatch.Application do
         #
         # Starts a worker by calling: Host.Worker.start_link(arg)
         # {Host.Worker, arg},
+        HelloWatch.Alarms,
+        HelloWatch.Timers
       ]
     end
   else
@@ -45,7 +47,11 @@ defmodule HelloWatch.Application do
           id: HelloWatch.UI,
           type: :supervisor,
           start: {Supervisor, :start_link, [ui_children(), [strategy: :rest_for_one]]}
-        }
+        },
+        # After the UI, so a timer that ran out while the watch was off rings
+        # on it.
+        HelloWatch.Alarms,
+        HelloWatch.Timers
       ]
     end
 

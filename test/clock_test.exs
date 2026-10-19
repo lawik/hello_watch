@@ -36,7 +36,7 @@ defmodule HelloWatch.ClockTest do
   end
 
   # Opens `app` from the inventory, as a finger would.
-  @apps [:clock, :battery, :network, :sensors, :moon, :tailscale]
+  @apps [:clock, :alarms, :timers, :stopwatch, :battery, :network, :sensors, :moon, :tailscale]
 
   defp open(pid, app) do
     send(pid, {:vdrag, -200})
@@ -336,6 +336,42 @@ defmodule HelloWatch.ClockTest do
       assert_receive :sleep
       send(pid, {:swipe, :left})
       assert %{page: :clock, on: false} = Clock.status()
+    end
+
+    test "the stopwatch runs on a tap, keeping the screen on, and stops on another", %{
+      clock: pid
+    } do
+      open(pid, :stopwatch)
+      send(pid, {:tap, {227, 333}})
+      assert %{stopwatch: %{since: since}} = :sys.get_state(pid)
+      assert since != nil
+
+      # It redraws fast while it runs, and neither dims nor sleeps.
+      flush_frames()
+      Process.sleep(500)
+      assert frames() >= 5
+      send(pid, :dim)
+      send(pid, :screen_timeout)
+      assert %{on: true, dimmed: false} = :sys.get_state(pid)
+
+      send(pid, {:tap, {227, 333}})
+      assert %{stopwatch: %{since: nil, total: total}, app_ref: nil} = :sys.get_state(pid)
+      assert total >= 500
+      send(pid, :screen_timeout)
+      assert %{on: false} = :sys.get_state(pid)
+    end
+
+    test "a ring wakes the screen on its app until a tap stops it", %{clock: pid} do
+      Clock.toggle()
+      assert_receive :sleep
+      send(pid, {:ring, :timer, %{id: 1, seconds: 60, ends: DateTime.utc_now()}})
+      assert %{on: true, app: :timers, ringing: %{kind: :timer}} = :sys.get_state(pid)
+
+      # It stays on, past the idle timeout, until a tap.
+      send(pid, :screen_timeout)
+      assert %{on: true} = :sys.get_state(pid)
+      send(pid, {:tap, {227, 227}})
+      assert %{ringing: nil, on: true} = :sys.get_state(pid)
     end
   end
 
