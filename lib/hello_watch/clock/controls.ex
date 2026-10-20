@@ -1,7 +1,7 @@
 defmodule HelloWatch.Clock.Controls do
   @moduledoc """
   The watch's global switches, shown as constellations in the sky: Wi-Fi,
-  Bluetooth, Tailscale and NervesHub.
+  Bluetooth, Tailscale, NervesHub and the Wi-Fi access point.
 
   Wi-Fi and Bluetooth are switched with their rfkill soft blocks, which the
   kernel keeps for the radio whatever the network configuration is. Turning
@@ -9,17 +9,19 @@ defmodule HelloWatch.Clock.Controls do
   Tailscale starts and stops tailscaled (see HelloWatch.Tailscale).
   NervesHub starts and stops the `:nerves_hub_link` application, and with it
   firmware updates and remote IEx; it starts again on every boot.
+  The access point takes over wlan0 from its usual network until it's
+  switched off or the watch reboots (see HelloWatch.AccessPoint).
 
-  `read/1` and `toggle/2` take an `:rfkill` directory, and the Tailscale and
-  NervesHub states, for tests.
+  `read/1` and `toggle/2` take an `:rfkill` directory, and the Tailscale,
+  NervesHub and access point states, for tests.
   """
 
-  alias HelloWatch.Tailscale
+  alias HelloWatch.{AccessPoint, Tailscale}
 
   @rfkill "/sys/class/rfkill"
 
   @type control :: %{
-          id: :wifi | :bluetooth | :tailscale | :nerves_hub,
+          id: :wifi | :bluetooth | :tailscale | :nerves_hub | :access_point,
           name: String.t(),
           on: boolean() | nil,
           detail: String.t()
@@ -31,12 +33,14 @@ defmodule HelloWatch.Clock.Controls do
     rfkill = Keyword.get(opts, :rfkill, @rfkill)
     tailscale = Keyword.get_lazy(opts, :tailscale, &tailscale_info/0)
     nerves_hub = Keyword.get_lazy(opts, :nerves_hub, &nerves_hub_info/0)
+    access_point = Keyword.get_lazy(opts, :access_point, &access_point_info/0)
 
     [
       radio(:wifi, "Wi-Fi", rfkill, "wlan", &ssid/0),
       radio(:bluetooth, "Bluetooth", rfkill, "bluetooth", fn -> nil end),
       tailscale(tailscale),
-      nerves_hub(nerves_hub)
+      nerves_hub(nerves_hub),
+      access_point(access_point)
     ]
   end
 
@@ -65,6 +69,23 @@ defmodule HelloWatch.Clock.Controls do
       :unconfigured -> {:error, :unconfigured}
       :stopped -> start_nerves_hub()
       _running -> Application.stop(:nerves_hub_link)
+    end
+  end
+
+  # The radio has to be on to serve the access point.
+  def toggle(:access_point, opts) do
+    case Keyword.get_lazy(opts, :access_point, &access_point_info/0) do
+      :unavailable ->
+        {:error, :unavailable}
+
+      :off ->
+        rfkill = Keyword.get(opts, :rfkill, @rfkill)
+
+        with :ok <- unblock(rfkill, "wlan"),
+             do: Keyword.get(opts, :start_access_point, &AccessPoint.start/0).()
+
+      _up ->
+        Keyword.get(opts, :stop_access_point, &AccessPoint.stop/0).()
     end
   end
 
@@ -104,6 +125,15 @@ defmodule HelloWatch.Clock.Controls do
   defp nerves_hub(:unconfigured),
     do: %{id: :nerves_hub, name: "NervesHub", on: nil, detail: "not configured"}
 
+  defp access_point(%{ssid: ssid}),
+    do: %{id: :access_point, name: "Access point", on: true, detail: ssid}
+
+  defp access_point(:off),
+    do: %{id: :access_point, name: "Access point", on: false, detail: "off"}
+
+  defp access_point(:unavailable),
+    do: %{id: :access_point, name: "Access point", on: nil, detail: "unavailable"}
+
   # The first rfkill switch of `type`, and whether it's soft blocked.
   defp soft_blocked(rfkill, type) do
     rfkill
@@ -123,6 +153,13 @@ defmodule HelloWatch.Clock.Controls do
     case soft_blocked(rfkill, type) do
       nil -> {:error, :unavailable}
       {path, blocked} -> File.write(Path.join(path, "soft"), if(blocked, do: "0", else: "1"))
+    end
+  end
+
+  defp unblock(rfkill, type) do
+    case soft_blocked(rfkill, type) do
+      {path, true} -> File.write(Path.join(path, "soft"), "0")
+      _ -> :ok
     end
   end
 
@@ -157,6 +194,15 @@ defmodule HelloWatch.Clock.Controls do
     case Application.ensure_all_started(:nerves_hub_link) do
       {:ok, _apps} -> :ok
       error -> error
+    end
+  end
+
+  # VintageNet only exists on the watch.
+  defp access_point_info do
+    cond do
+      not Code.ensure_loaded?(VintageNet) -> :unavailable
+      info = AccessPoint.info() -> info
+      true -> :off
     end
   end
 

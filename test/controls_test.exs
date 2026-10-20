@@ -18,7 +18,8 @@ defmodule HelloWatch.Clock.ControlsTest do
       opts: [
         rfkill: dir,
         tailscale: %{state: "Running", ip: "100.64.0.7"},
-        nerves_hub: :connected
+        nerves_hub: :connected,
+        access_point: :off
       ],
       dir: dir
     }
@@ -29,10 +30,46 @@ defmodule HelloWatch.Clock.ControlsTest do
              %{id: :wifi, on: true},
              %{id: :bluetooth, on: false, detail: "off"},
              %{id: :tailscale, on: true, detail: "100.64.0.7"},
-             %{id: :nerves_hub, on: true, detail: "connected"}
+             %{id: :nerves_hub, on: true, detail: "connected"},
+             %{id: :access_point, on: false, detail: "off"}
            ] = Controls.read(opts)
 
-    assert [_, _, _, %{on: nil}] = Controls.read(Keyword.put(opts, :nerves_hub, :unconfigured))
+    assert [_, _, _, %{on: nil}, _] =
+             Controls.read(Keyword.put(opts, :nerves_hub, :unconfigured))
+
+    up = %{ssid: "watch-0453", psk: "abcdefgh", clients: 0}
+
+    assert [_, _, _, _, %{on: true, detail: "watch-0453"}] =
+             Controls.read(Keyword.put(opts, :access_point, up))
+  end
+
+  test "turns the radio on to start the access point, and stops it", %{opts: opts, dir: dir} do
+    test = self()
+    File.write!(Path.join(dir, "rfkill1/soft"), "1\n")
+
+    opts =
+      opts ++
+        [
+          start_access_point: fn ->
+            send(test, :started)
+            :ok
+          end,
+          stop_access_point: fn ->
+            send(test, :stopped)
+            :ok
+          end
+        ]
+
+    assert :ok = Controls.toggle(:access_point, opts)
+    assert_received :started
+    assert File.read!(Path.join(dir, "rfkill1/soft")) == "0"
+
+    up = %{ssid: "watch-0453", psk: "abcdefgh", clients: 0}
+    assert :ok = Controls.toggle(:access_point, Keyword.put(opts, :access_point, up))
+    assert_received :stopped
+
+    assert Controls.toggle(:access_point, Keyword.put(opts, :access_point, :unavailable)) ==
+             {:error, :unavailable}
   end
 
   test "flips the radios with their rfkill soft blocks", %{opts: opts, dir: dir} do
@@ -53,6 +90,7 @@ defmodule HelloWatch.Clock.ControlsTest do
     assert Sky.hit({142, 162}) == :wifi
     assert Sky.hit({300, 170}) == :bluetooth
     assert Sky.hit({320, 296}) == :nerves_hub
+    assert Sky.hit({230, 220}) == :access_point
     assert Sky.hit({227, 430}) == nil
   end
 end

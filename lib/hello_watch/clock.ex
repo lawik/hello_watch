@@ -73,7 +73,7 @@ defmodule HelloWatch.Clock do
     TimersApp
   }
 
-  alias HelloWatch.{Power, Recorder, Sensors, Tailscale, Vibrator}
+  alias HelloWatch.{AccessPoint, Power, Recorder, Sensors, Tailscale, Vibrator}
 
   # The inventory's ring, from twelve o'clock.
   @apps [:clock, :alarms, :timers, :stopwatch, :battery, :network, :sensors, :moon, :tailscale]
@@ -395,7 +395,10 @@ defmodule HelloWatch.Clock do
     do: StopwatchApp.render(state.stopwatch, System.monotonic_time(:millisecond))
 
   defp view(state, :battery), do: BatteryPage.render(battery(state), :battery)
-  defp view(_state, :network), do: Pages.render("Network", network_rows(), :network, hostname())
+
+  defp view(_state, :network),
+    do: Pages.render("Network", network_rows(AccessPoint.info()), :network, hostname())
+
   defp view(state, :sensors), do: Pages.render("Sensors", sensor_rows(state), :sensors)
   defp view(_state, :moon), do: MoonApp.render(Moon.phase(DateTime.utc_now()))
   defp view(state, :tailscale), do: TailscalePage.render(state.tailscale, :tailscale)
@@ -1248,10 +1251,16 @@ defmodule HelloWatch.Clock do
     end
   end
 
-  # The watch's hostname and addresses.
-  # Each interface's address: its IPv4 one if it has one, as IPv6 addresses
-  # are too long to read at a useful size.
-  defp network_rows do
+  # While the access point is up, its name and passphrase to join it with.
+  # Then each interface's address: its IPv4 one if it has one, as IPv6
+  # addresses are too long to read at a useful size.
+  @doc false
+  def network_rows(nil), do: interface_rows()
+
+  def network_rows(%{ssid: ssid, psk: psk}),
+    do: [{"access point", ssid}, {"password", psk} | interface_rows()]
+
+  defp interface_rows do
     case :inet.getifaddrs() do
       {:ok, ifs} ->
         for {name, attrs} <- ifs,

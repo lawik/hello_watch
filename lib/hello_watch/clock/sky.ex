@@ -13,7 +13,7 @@ defmodule HelloWatch.Clock.Sky do
   # Each constellation (priv/images/sky-<id>-<on|off>.svg) is this square.
   @figure 180
   # A tap within this many pixels of a bright star hits it.
-  @reach 70
+  @reach 64
   # The cloud along the lower edge (priv/images/edge-sky.svg): its height,
   # and where the edge is in it.
   @fringe 220
@@ -22,12 +22,14 @@ defmodule HelloWatch.Clock.Sky do
   @mist 230
   @mist_edge 70
 
-  # Where each switch's constellation is centred.
+  # Where each switch's constellation is centred: two, one in the middle,
+  # two.
   @constellations %{
-    wifi: {138, 160},
-    bluetooth: {316, 160},
-    tailscale: {138, 300},
-    nerves_hub: {316, 300}
+    wifi: {138, 130},
+    bluetooth: {316, 130},
+    access_point: {227, 227},
+    tailscale: {138, 324},
+    nerves_hub: {316, 324}
   }
 
   # Faint background stars, fixed so the sky doesn't shimmer between frames.

@@ -10,7 +10,9 @@ defmodule HelloWatch.Suspend do
 
     * it stays awake on USB power, where suspending saves nothing and would
       cut off a cable-attached session;
-    * it stays awake while an SSH session is open;
+    * it stays awake while an SSH session is open, or while the Wi-Fi
+      access point is up (see HelloWatch.AccessPoint), which a suspend would
+      take down;
     * the power key, via `HelloWatch.Clock.Button`, turns the screen on after
       a wake, which holds the watch awake until the screen goes off again;
     * any other wake (RTC, charger) gets another `@grace` and suspends again.
@@ -89,6 +91,7 @@ defmodule HelloWatch.Suspend do
     cond do
       on_usb?() -> "on USB power"
       ssh_sessions?() -> "SSH session open"
+      HelloWatch.AccessPoint.up?() -> "access point up"
       true -> nil
     end
   end

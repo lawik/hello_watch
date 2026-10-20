@@ -44,8 +44,16 @@ without your SSH keys or Wi-Fi credentials.
 - **Bottom button** toggles the screen; a touch also wakes it. The screen
   fades off after 2 minutes idle.
 - **Pull down** for the sky: the watch's switches as constellations. A
-  bright star is on, a dim one off; tap it to switch Wi-Fi, Bluetooth or
-  Tailscale. Push back up to return.
+  bright star is on, a dim one off; tap it to switch Wi-Fi, Bluetooth,
+  Tailscale, NervesHub or the access point. Push back up to return.
+- The **access point** (the mast in the middle of the sky) turns Wi-Fi
+  into a network of the watch's own, `watch-XXXX` after the last four digits
+  of its serial number. The Network app shows its password, eight
+  lowercase letters made up the first time and kept from then on. The
+  watch is `192.168.24.1` on it, for SSH and `mix upload`. It leaves the
+  watch's usual Wi-Fi network until it's switched off or the watch
+  reboots, and keeps the watch from suspending meanwhile. It needs a
+  system built with `BR2_PACKAGE_WPA_SUPPLICANT_AP_SUPPORT`.
 - **Pull up** for the inventory: a dark circle with the apps in a ring
   (clock, battery, network, sensors, moon, Tailscale). Tap one to open it.
 - **Drag sideways** to move through recently used apps: right goes back,
