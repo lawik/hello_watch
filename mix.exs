@@ -57,7 +57,7 @@ defmodule HelloWatch.MixProject do
       # speaker and shows the other devices' cameras. Not started at boot: it
       # keys its :pg groups on node(), so HelloWatch.Home starts it once the
       # watch is a distribution node. The release only loads it.
-      {:home_base, github: "lawik/home_base", branch: "video-hw-decode", runtime: false},
+      {:home_base, github: "lawik/home_base", branch: "main", runtime: false},
 
       # Runs tailscaled (see HelloWatch.Tailscale).
       {:muontrap, "~> 1.8"},

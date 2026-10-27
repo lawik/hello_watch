@@ -164,6 +164,9 @@ else
   config :nerves_hub_link, connect: false
 end
 
+# Not now: NervesHub's socket competes with video for the watch's thin Wi-Fi.
+config :nerves_hub_link, connect: false
+
 # Emerge's DRM backend with OpenGL ES, for the GPU system (Mesa freedreno,
 # EGL and GBM; wip/gpu of nerves_system_tickwatch_pro3, passed as
 # NERVES_SYSTEM until it's released). On the v0.2.0 system, which has no
@@ -211,7 +214,26 @@ config :home_base,
   ],
   data_dir: "/root/home",
   media: [ports: 50_000..50_099],
-  video: [decoder: Membrane.V4L2.H264.Decoder]
+  # Venus decodes, and says what it wants: the watch's Wi-Fi carries about
+  # 1 Mbit/s at best on the office network, shared with Tailscale and the
+  # cluster, and the panel is 454 pixels across. A session settles a stream
+  # within these at the camera (Home.Media.Video), the phones' made smaller
+  # by their own Venus. software: false, so a stream Venus can't take is an
+  # error, not a slow picture.
+  video: [
+    decoders: [
+      %{
+        element: Membrane.V4L2.H264.Decoder,
+        name: "Venus",
+        profiles: [:constrained_baseline, :baseline, :main, :high],
+        max_level: 40,
+        max_size: {640, 480},
+        max_fps: 15,
+        max_bitrate: 300_000
+      }
+    ],
+    software: false
+  ]
 
 # home_base's Membrane plugins link the system's FFmpeg, Opus and PortAudio
 # rather than Bundlex's precompiled builds, which are hundreds of MB each.

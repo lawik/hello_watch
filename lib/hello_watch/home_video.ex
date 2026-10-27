@@ -17,10 +17,10 @@ defmodule HelloWatch.HomeVideo do
   require Logger
 
   @display "watch_video"
-  # The watch's Wi-Fi is 802.11n on one stream, shared with the phones'
-  # streams through the same access point. The phones' own encoders are
-  # fixed at 1 Mbit/s; this is the cap for cameras their node encodes.
-  @bitrate 1_000_000
+  # What the watch asks for; its decoder's limits (config :home_base, video:)
+  # cap the stream too, wherever it's made.
+  @fps 15
+  @bitrate 300_000
 
   @doc false
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -100,6 +100,7 @@ defmodule HelloWatch.HomeVideo do
             source: source,
             sinks: [sink],
             codec: :h264,
+            fps: @fps,
             bitrate: @bitrate,
             surface: {self(), :home_video}
           ]
