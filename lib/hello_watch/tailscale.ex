@@ -125,14 +125,11 @@ defmodule HelloWatch.Tailscale do
   @spec cli([String.t()]) :: {:ok, String.t()} | {:error, {term(), String.t()}}
   def cli(args), do: cli(config(), args)
 
-  @doc """
-  The tailscale CLI and the arguments that point it at tailscaled, for
-  programs that run it themselves.
-  """
-  @spec command() :: {String.t(), [String.t()]}
-  def command do
+  @doc "The tailscale CLI and tailscaled's socket, for programs that run it themselves."
+  @spec paths() :: %{cli: String.t(), socket: String.t()}
+  def paths do
     config = config()
-    {config.tailscale, ["--socket=#{config.socket}"]}
+    %{cli: config.tailscale, socket: config.socket}
   end
 
   @impl GenServer

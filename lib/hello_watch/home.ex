@@ -18,8 +18,8 @@ defmodule HelloWatch.Home do
     * raises the kernel's default socket send buffer (`:send_buffer`, 2 MB),
       as the phones do: media sockets get the default, and a camera
       keyframe's packets, sent at once, fill the 208 KB one,
-    * points home_base's Tailscale backend at the watch's tailscaled, whose
-      socket isn't the CLI's default,
+    * links the watch's tailscaled socket where the CLI looks by default, as
+      home_base's Tailscale backend runs it with no `--socket`,
 
   and starts home_base.
 
@@ -35,9 +35,8 @@ defmodule HelloWatch.Home do
   require Logger
 
   @poll_ms 2_000
-  # A wrapper for the tailscale CLI with its socket, which home_base runs as
-  # `<cmd> status --json`.
-  @tailscale_wrapper "/tmp/home-tailscale"
+  # Where the tailscale CLI looks for tailscaled when it isn't told.
+  @default_socket "/run/tailscale/tailscaled.sock"
 
   @doc false
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -90,14 +89,10 @@ defmodule HelloWatch.Home do
   defp start_home_base(config, ip) do
     set_send_buffer(Keyword.get(config, :send_buffer, 2_097_152))
 
-    {tailscale, args} = HelloWatch.Tailscale.command()
-
-    File.write!(@tailscale_wrapper, """
-    #!/bin/sh
-    exec #{tailscale} #{Enum.join(args, " ")} "$@"
-    """)
-
-    File.chmod!(@tailscale_wrapper, 0o755)
+    %{cli: tailscale, socket: socket} = HelloWatch.Tailscale.paths()
+    File.mkdir_p!(Path.dirname(@default_socket))
+    File.rm(@default_socket)
+    File.ln_s!(socket, @default_socket)
 
     {:ok, hostname} = :inet.gethostname()
     media = Application.get_env(:home_base, :media, [])
@@ -107,7 +102,7 @@ defmodule HelloWatch.Home do
     Application.put_env(:home_base, :cluster,
       backend:
         {Home.Cluster.Tailscale,
-         cmd: @tailscale_wrapper,
+         cmd: tailscale,
          tag: Keyword.get(config, :tag, "tag:homecluster"),
          basename: Keyword.get(config, :basename, "home")}
     )
