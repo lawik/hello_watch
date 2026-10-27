@@ -102,7 +102,13 @@ defmodule HelloWatch.MixProject do
       cookie: "#{@app}_cookie",
       applications: [home_base: :load],
       include_erts: &Nerves.Release.erts/0,
-      steps: [&Nerves.Release.init/1, :assemble, &keep_target_nif/1, &add_tailscale/1],
+      steps: [
+        &Nerves.Release.init/1,
+        :assemble,
+        &keep_target_nif/1,
+        &drop_precompiled/1,
+        &add_tailscale/1
+      ],
       strip_beams: Mix.env() == :prod or [keep: ["Docs"]]
     ]
   end
@@ -121,6 +127,21 @@ defmodule HelloWatch.MixProject do
       |> Path.wildcard()
       |> Enum.reject(&String.ends_with?(&1, "-aarch64-unknown-linux-gnu--#{variant}.so"))
       |> Enum.each(&File.rm!/1)
+    end
+
+    release
+  end
+
+  # Bundlex keeps the precompiled FFmpeg, Opus and PortAudio it downloads for
+  # the host's test builds in its own priv, shared by every build. The watch
+  # links the system's (`config :bundlex, :disable_precompiled_os_deps`), so
+  # drop the host's from the firmware.
+  defp drop_precompiled(%Mix.Release{} = release) do
+    if Mix.target() != :host do
+      release.path
+      |> Path.join("lib/bundlex-*/priv/shared/precompiled")
+      |> Path.wildcard()
+      |> Enum.each(&File.rm_rf!/1)
     end
 
     release
