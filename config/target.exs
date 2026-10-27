@@ -183,8 +183,7 @@ config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels", renderer: :
 config :hello_watch, :home,
   cookie: :"tag:homecluster",
   tag: "tag:homecluster",
-  basename: "home",
-  interface: "wlan0"
+  basename: "home"
 
 # What the watch lends the cluster: its mic and speaker (ALSA's default
 # device, see rootfs_overlay/etc/asound.conf), opened only while a session

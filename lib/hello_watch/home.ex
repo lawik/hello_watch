@@ -7,12 +7,14 @@ defmodule HelloWatch.Home do
 
   The cluster is the tailnet's devices tagged `tag:homecluster`, each a node
   named `home@<Tailscale IPv4>` (home_base's `Home.Cluster.Tailscale`), all
-  with one cookie. Media goes over Wi-Fi rather than the tailnet: sinks on
-  the watch bind its wlan0 address and give that to sources.
+  with one cookie. Media goes over the tailnet too, as the phones' does: a
+  source sends from its own media address, and a phone's (its Tailscale
+  address) sent to the watch's Wi-Fi address is dropped by tailscaled's
+  firewall, which takes tailnet sources only on tailscale0.
 
   home_base keys its `:pg` groups and node state on `node()`, so it can only
   start after `Node.start/2`, and the release only loads it. Once Tailscale
-  has an address and wlan0 has one, this
+  has an address, this
 
     * starts epmd and the node, listening on the Tailscale address only,
     * raises the kernel's default socket send buffer (`:send_buffer`, 2 MB),
@@ -26,8 +28,7 @@ defmodule HelloWatch.Home do
       config :hello_watch, :home,
         cookie: :"tag:homecluster",
         tag: "tag:homecluster",
-        basename: "home",
-        interface: "wlan0"
+        basename: "home"
   """
 
   use GenServer
@@ -53,10 +54,9 @@ defmodule HelloWatch.Home do
 
   @impl GenServer
   def handle_info(:start, config) do
-    with {:ok, tailnet_ip} <- tailnet_address(),
-         {:ok, media_ip} <- address(config),
-         :ok <- start_node(config, tailnet_ip) do
-      start_home_base(config, media_ip)
+    with {:ok, ip} <- tailnet_address(),
+         :ok <- start_node(config, ip) do
+      start_home_base(config, ip)
     else
       _ -> Process.send_after(self(), :start, @poll_ms)
     end
@@ -123,19 +123,6 @@ defmodule HelloWatch.Home do
   defp tailnet_address do
     with {:ok, ip} <- HelloWatch.Tailscale.ip(),
          {:ok, ip} <- ip |> to_charlist() |> :inet.parse_ipv4_address() do
-      {:ok, ip}
-    else
-      _ -> :error
-    end
-  end
-
-  defp address(config) do
-    interface = config |> Keyword.get(:interface, "wlan0") |> to_charlist()
-
-    with {:ok, ifaddrs} <- :inet.getifaddrs(),
-         {_, opts} <- List.keyfind(ifaddrs, interface, 0),
-         ip when is_tuple(ip) <-
-           Enum.find(Keyword.get_values(opts, :addr), &(tuple_size(&1) == 4)) do
       {:ok, ip}
     else
       _ -> :error
