@@ -45,6 +45,9 @@ defmodule HelloWatch.Application do
         HelloWatch.Recorder,
         HelloWatch.Nanohub.Guard,
         HelloWatch.Suspend,
+        # Outside the UI's supervisor: it's how to reach a watch whose UI is
+        # broken and whose Wi-Fi is not up.
+        HelloWatch.AccessPoint.Fallback,
         HelloWatch.Tailscale,
         # The home cluster; the video surface and its owner come first, so
         # the display home_base vends has somewhere to send frames.
