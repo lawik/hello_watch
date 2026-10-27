@@ -31,14 +31,8 @@ defmodule HelloWatch.Clock.Pages do
   headline value, plain strings, or `""` for a gap. `view` picks the backdrop's tint; `caption` runs along the bottom.
   """
   def render(title, rows, view, caption \\ nil) do
-    heights = Enum.map(rows, &row_height/1)
-    total = Enum.sum(heights) + @spacing * (length(rows) - 1)
-    top = Kernel.max(@body_top, round(@center - total / 2))
-
-    {elements, _} =
-      Enum.map_reduce(Enum.zip(rows, heights), top, fn {row, h}, y ->
-        {row_element(row, y), y + h + @spacing}
-      end)
+    top = rows |> spans() |> List.first({@body_top, 0}) |> elem(0)
+    elements = Enum.zip_with(rows, spans(rows), fn row, {y, _h} -> row_element(row, y) end)
 
     body =
       column(
@@ -47,6 +41,19 @@ defmodule HelloWatch.Clock.Pages do
       )
 
     page(title, body, view, caption)
+  end
+
+  @doc """
+  Where `render/4` puts each of `rows`, as `{top, height}` in panel pixels,
+  for telling which one a tap is on.
+  """
+  def spans(rows) do
+    heights = Enum.map(rows, &row_height/1)
+    total = Enum.sum(heights) + @spacing * (length(rows) - 1)
+    top = Kernel.max(@body_top, round(@center - total / 2))
+
+    {spans, _} = Enum.map_reduce(heights, top, fn h, y -> {{y, h}, y + h + @spacing} end)
+    spans
   end
 
   @doc "A flat colour for areas next to a view, as it slides in."

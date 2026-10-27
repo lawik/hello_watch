@@ -26,7 +26,8 @@ defmodule HelloWatch.Clock.Inventory do
     network: :moss,
     sensors: :rose,
     moon: :candle,
-    tailscale: :lilac
+    tailscale: :lilac,
+    cameras: :rose
   }
 
   @doc """

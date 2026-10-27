@@ -50,7 +50,14 @@ defmodule HelloWatch.MixProject do
 
       # UI: Emerge renders the watch face and pages, with OpenGL ES straight to
       # the panel on the watch (see DISPLAY.md) or in a window on the host.
-      {:emerge, "~> 0.5.0"},
+      # Emerge 0.5 with the scene-forwarding hooks home_base needs.
+      {:emerge, github: "lawik/emerge", branch: "home-m8-forwarding", override: true},
+
+      # The home cluster (see HelloWatch.Home): the watch lends its mic and
+      # speaker and shows the other devices' cameras. Not started at boot: it
+      # keys its :pg groups on node(), so HelloWatch.Home starts it once the
+      # watch is a distribution node. The release only loads it.
+      {:home_base, github: "lawik/home_base", branch: "video-hw-decode", runtime: false},
 
       # Runs tailscaled (see HelloWatch.Tailscale).
       {:muontrap, "~> 1.8"},
@@ -71,6 +78,8 @@ defmodule HelloWatch.MixProject do
       {:circuits_gpio, "~> 2.1", targets: @all_targets},
       {:circuits_spi, "~> 2.0", targets: @all_targets},
       {:nerves_hub_link, "~> 2.12", targets: @all_targets},
+      # Video from the cluster, decoded by Venus (see HelloWatch.HomeVideo).
+      {:membrane_v4l2_decoder, github: "lawik/membrane_v4l2_decoder", targets: @all_targets},
 
       # Dependencies for specific targets
       # NOTE: It's generally low risk and recommended to follow minor version
@@ -91,6 +100,7 @@ defmodule HelloWatch.MixProject do
       # Erlang distribution is not started automatically.
       # See https://hexdocs.pm/nerves_pack/readme.html#erlang-distribution
       cookie: "#{@app}_cookie",
+      applications: [home_base: :load],
       include_erts: &Nerves.Release.erts/0,
       steps: [&Nerves.Release.init/1, :assemble, &keep_target_nif/1, &add_tailscale/1],
       strip_beams: Mix.env() == :prod or [keep: ["Docs"]]

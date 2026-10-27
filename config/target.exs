@@ -175,6 +175,48 @@ config :emerge, compiled_backends: [drm: [:opengl]]
 # handled. Set this to wherever the watch actually is.
 config :hello_watch, HelloWatch.Clock, time_zone: "Europe/Brussels", renderer: :drm
 
+# The home cluster (HelloWatch.Home): the tailnet's devices tagged
+# tag:homecluster, as home@<Tailscale address>, sharing one cookie.
+config :hello_watch, :home,
+  cookie: :"tag:homecluster",
+  tag: "tag:homecluster",
+  basename: "home",
+  interface: "wlan0"
+
+# What the watch lends the cluster: its mic and speaker (ALSA's default
+# device, see rootfs_overlay/etc/asound.conf), opened only while a session
+# holds them, and its screen for video (HelloWatch.HomeVideo.Display). Video
+# is decoded by Venus, the SoC's codec, straight to DMA-BUFs Emerge draws.
+config :home_base,
+  capabilities: [
+    %{
+      id: "mic",
+      kind: :audio_in,
+      availability: :on_request,
+      adapter: Home.Adapters.Audio.PortAudioIn,
+      meta: %{channels: 1, rate: 48_000}
+    },
+    %{
+      id: "speaker",
+      kind: :audio_out,
+      availability: :on_request,
+      adapter: Home.Adapters.Audio.PortAudioOut
+    },
+    %{
+      id: "watch_video",
+      kind: :display,
+      adapter: HelloWatch.HomeVideo.Display,
+      meta: %{w: 454, h: 454, touch: false}
+    }
+  ],
+  data_dir: "/root/home",
+  media: [ports: 50_000..50_099],
+  video: [decoder: Membrane.V4L2.H264.Decoder]
+
+# home_base's Membrane plugins link the system's FFmpeg, Opus and PortAudio
+# rather than Bundlex's precompiled builds, which are hundreds of MB each.
+config :bundlex, :disable_precompiled_os_deps, true
+
 # Import target specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 # Uncomment to use target specific configurations

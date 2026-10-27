@@ -36,7 +36,18 @@ defmodule HelloWatch.ClockTest do
   end
 
   # Opens `app` from the inventory, as a finger would.
-  @apps [:clock, :alarms, :timers, :stopwatch, :battery, :network, :sensors, :moon, :tailscale]
+  @apps [
+    :clock,
+    :alarms,
+    :timers,
+    :stopwatch,
+    :battery,
+    :network,
+    :sensors,
+    :moon,
+    :tailscale,
+    :cameras
+  ]
 
   defp open(pid, app) do
     send(pid, {:vdrag, -200})

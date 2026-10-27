@@ -46,6 +46,11 @@ defmodule HelloWatch.Application do
         HelloWatch.Nanohub.Guard,
         HelloWatch.Suspend,
         HelloWatch.Tailscale,
+        # The home cluster; the video surface and its owner come first, so
+        # the display home_base vends has somewhere to send frames.
+        HelloWatch.HomeVideo.Surface,
+        HelloWatch.HomeVideo,
+        HelloWatch.Home,
         %{
           id: HelloWatch.UI,
           type: :supervisor,

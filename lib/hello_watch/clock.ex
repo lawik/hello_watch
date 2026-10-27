@@ -57,6 +57,7 @@ defmodule HelloWatch.Clock do
     AlarmsApp,
     Backdrop,
     BatteryPage,
+    CamerasApp,
     Controls,
     Display,
     Face,
@@ -73,10 +74,21 @@ defmodule HelloWatch.Clock do
     TimersApp
   }
 
-  alias HelloWatch.{AccessPoint, Power, Recorder, Sensors, Tailscale, Vibrator}
+  alias HelloWatch.{AccessPoint, HomeVideo, Power, Recorder, Sensors, Tailscale, Vibrator}
 
   # The inventory's ring, from twelve o'clock.
-  @apps [:clock, :alarms, :timers, :stopwatch, :battery, :network, :sensors, :moon, :tailscale]
+  @apps [
+    :clock,
+    :alarms,
+    :timers,
+    :stopwatch,
+    :battery,
+    :network,
+    :sensors,
+    :moon,
+    :tailscale,
+    :cameras
+  ]
 
   # The hub delivers every event to a single reader, so one stream serves the
   # whole app: charge alone while the face is up, plus the rest on the sensor
@@ -194,6 +206,11 @@ defmodule HelloWatch.Clock do
         dim_timer: nil,
         tailscale: nil,
         tailscale_read: nil,
+        # The home cluster's cameras; see CamerasApp. Reading them and
+        # starting one run beside the viewport.
+        cameras: CamerasApp.new(),
+        cameras_read: nil,
+        camera_task: nil,
         tailscale_ref: nil,
         controls: nil,
         controls_read: nil,
@@ -402,6 +419,7 @@ defmodule HelloWatch.Clock do
   defp view(state, :sensors), do: Pages.render("Sensors", sensor_rows(state), :sensors)
   defp view(_state, :moon), do: MoonApp.render(Moon.phase(DateTime.utc_now()))
   defp view(state, :tailscale), do: TailscalePage.render(state.tailscale, :tailscale)
+  defp view(state, :cameras), do: CamerasApp.render(state.cameras)
 
   # The app being pulled in slides over the one shown, which stays put.
   # `at` is where the incoming app's own content sits, as {from, to}: equal
@@ -648,7 +666,64 @@ defmodule HelloWatch.Clock do
     {:noreply, state |> schedule_app_tick() |> Viewport.rerender()}
   end
 
+  def handle_info({:tap, at}, %{app: :cameras, overlay: nil} = state) do
+    state =
+      case CamerasApp.tap(state.cameras, at) do
+        {:watch, camera} -> watch_camera(state, camera)
+        :stop -> stop_camera(state)
+        :devices -> put_in(state.cameras.device, nil)
+        {:device, device} -> put_in(state.cameras.device, device)
+        nil -> state
+      end
+
+    {:noreply, Viewport.rerender(state)}
+  end
+
   def handle_info({:tap, _at}, state), do: {:noreply, state}
+
+  # The cluster's cameras, read on entering the app.
+  def handle_info({ref, list}, %{cameras_read: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    state = %{state | cameras_read: nil, cameras: %{state.cameras | list: list}}
+    {:noreply, if(state.app == :cameras, do: Viewport.rerender(state), else: state)}
+  end
+
+  # A camera started, or didn't.
+  def handle_info({ref, result}, %{camera_task: ref} = state) do
+    Process.demonitor(ref, [:flush])
+    state = %{state | camera_task: nil}
+
+    state =
+      case result do
+        :ok ->
+          state
+
+        {:error, reason} ->
+          Logger.warning("Showing a camera failed: #{inspect(reason)}")
+          stop_camera(%{state | cameras: %{state.cameras | error: reason}})
+      end
+
+    {:noreply, Viewport.rerender(state)}
+  end
+
+  # News of the stream from HelloWatch.HomeVideo.Surface.
+  def handle_info({:home_video, :stopped}, %{cameras: %{showing: showing}} = state)
+      when showing != nil do
+    # The session ended without a tap: the camera's device went, or a revoke.
+    {:noreply, state |> stop_camera() |> Viewport.rerender()}
+  end
+
+  def handle_info({:home_video, event, info}, %{cameras: %{showing: showing}} = state)
+      when showing != nil do
+    first? = state.cameras.status == nil
+    state = put_in(state.cameras.status, {event, info})
+    # The picture itself goes straight to the video element; only the first
+    # news changes the view, which drops the "Connecting…" line.
+    {:noreply, if(first?, do: Viewport.rerender(state), else: state)}
+  end
+
+  def handle_info({:home_video, _event}, state), do: {:noreply, state}
+  def handle_info({:home_video, _event, _info}, state), do: {:noreply, state}
 
   # An alarm or timer is due; see HelloWatch.Alarms and HelloWatch.Timers.
   def handle_info({:ring, kind, item}, state) do
@@ -1012,7 +1087,11 @@ defmodule HelloWatch.Clock do
 
   # The screen stays on and bright while the stopwatch runs or something
   # rings. It also stays on while recording, as suspending would end it.
-  defp keep_on?(state), do: StopwatchApp.running?(state.stopwatch) or state.ringing != nil
+  # So does a camera, while it's shown.
+  defp keep_on?(state) do
+    StopwatchApp.running?(state.stopwatch) or state.ringing != nil or
+      state.cameras.showing != nil
+  end
 
   defp dismiss(state) do
     Vibrator.stop()
@@ -1058,6 +1137,7 @@ defmodule HelloWatch.Clock do
   defp read_controls(state), do: state
 
   defp sleep(state) do
+    state = stop_camera(state)
     if state.idle_timer, do: Process.cancel_timer(state.idle_timer)
     if state.dim_timer, do: Process.cancel_timer(state.dim_timer)
     close_sensors(state.sensor_port)
@@ -1162,6 +1242,7 @@ defmodule HelloWatch.Clock do
   defp undim(state), do: panel(%{state | dimmed: false}, :undim)
 
   defp enter_page(state, :sensors), do: stream(state, @sensor_stream)
+  defp enter_page(state, :cameras), do: state |> enter_page(:clock) |> read_cameras()
   defp enter_page(state, :tailscale), do: state |> enter_page(:clock) |> read_tailscale()
 
   defp enter_page(state, app) when app in [:timers, :stopwatch],
@@ -1174,6 +1255,7 @@ defmodule HelloWatch.Clock do
   # looking live when the stream that produced them is no longer running.
   defp leave_page(state, :sensors), do: %{stream(state, @idle_stream) | sensors: %{}}
   defp leave_page(state, :alarms), do: %{state | alarm_edit: nil}
+  defp leave_page(state, :cameras), do: %{stop_camera(state) | cameras: CamerasApp.new()}
   defp leave_page(state, _), do: state
 
   # tailscale CLI calls take a moment on this CPU, so they run beside the
@@ -1192,6 +1274,36 @@ defmodule HelloWatch.Clock do
   end
 
   defp read_tailscale(state), do: state
+
+  # Reading the registry is a call into home_base, beside the viewport too.
+  defp read_cameras(%{cameras_read: nil} = state) do
+    task = Task.async(fn -> safely(&HomeVideo.cameras/0) end)
+    %{state | cameras_read: task.ref}
+  end
+
+  defp read_cameras(state), do: state
+
+  # Leasing the camera and starting its session takes a few round trips
+  # through the cluster. Frames go to the video element once it's drawn.
+  defp watch_camera(state, camera) do
+    if Process.whereis(HomeVideo.Surface) do
+      HomeVideo.Surface.subscribe(self())
+      HomeVideo.Surface.set_target(CamerasApp.target())
+    end
+
+    task = Task.async(fn -> safely(fn -> HomeVideo.start(camera) end) end)
+
+    cameras = %{state.cameras | showing: camera, status: nil, error: nil}
+    %{state | cameras: cameras, camera_task: task.ref} |> start_idle_timer()
+  end
+
+  defp stop_camera(%{cameras: %{showing: nil}} = state), do: state
+
+  defp stop_camera(state) do
+    if Process.whereis(HomeVideo.Surface), do: HomeVideo.Surface.set_target(nil)
+    Task.start(fn -> HomeVideo.stop() end)
+    %{state | cameras: %{state.cameras | showing: nil, status: nil}} |> start_idle_timer()
+  end
 
   defp stream(state, sensors) do
     close_sensors(state.sensor_port)
