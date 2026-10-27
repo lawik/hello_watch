@@ -6,6 +6,14 @@ import Config
 
 config :logger, backends: [RingLogger]
 
+# Errors and crash reports also go to /root/errors.log on the application
+# partition: RingLogger only keeps them in memory, and a crash that takes the
+# UI down is usually followed by a reboot. HelloWatch.Application adds it.
+config :hello_watch, :logger, [
+  {:handler, :error_file, :logger_std_h,
+   %{level: :error, config: %{file: ~c"/root/errors.log", max_no_bytes: 262_144, max_no_files: 1}}}
+]
+
 # Use shoehorn to start the main application. See the shoehorn
 # library documentation for more control in ordering how OTP
 # applications are started and handling failures.

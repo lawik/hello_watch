@@ -7,6 +7,9 @@ defmodule HelloWatch.Application do
 
   @impl true
   def start(_type, _args) do
+    # The :logger handlers in config/target.exs; none on the host.
+    Logger.add_handlers(:hello_watch)
+
     children =
       [
         # Children for all targets
