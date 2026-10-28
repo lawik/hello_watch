@@ -17,10 +17,13 @@ defmodule HelloWatch.HomeVideo do
   require Logger
 
   @display "watch_video"
-  # What the watch asks for; its decoder's limits (config :home_base, video:)
-  # cap the stream too, wherever it's made.
-  @fps 15
-  @bitrate 300_000
+  # What the watch asks for, within its decoder's limits (config :home_base,
+  # video:). The picture is cropped to cover the 454x454 panel, so it wants
+  # at least 454 lines: 720p is the smallest the phones send that has them.
+  # 1 Mbit/s is the phones' most, well within the watch's ~4 Mbit/s Wi-Fi.
+  @size {1280, 720}
+  @fps 24
+  @bitrate 1_000_000
 
   @doc false
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -100,6 +103,7 @@ defmodule HelloWatch.HomeVideo do
             source: source,
             sinks: [sink],
             codec: :h264,
+            size: @size,
             fps: @fps,
             bitrate: @bitrate,
             surface: {self(), :home_video}

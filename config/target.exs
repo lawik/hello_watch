@@ -213,12 +213,11 @@ config :home_base,
   ],
   data_dir: "/root/home",
   media: [ports: 50_000..50_099],
-  # Venus decodes, and says what it wants: the watch's Wi-Fi carries about
-  # 1 Mbit/s at best on the office network, shared with Tailscale and the
-  # cluster, and the panel is 454 pixels across. A session settles a stream
-  # within these at the camera (Home.Media.Video), the phones' made smaller
-  # by their own Venus. software: false, so a stream Venus can't take is an
-  # error, not a slow picture.
+  # Venus decodes. These are its limits on msm8937 (1080p30, level 4.0);
+  # what the watch asks for within them is HelloWatch.HomeVideo's request.
+  # A session settles a stream at the camera (Home.Media.Video), the phones'
+  # made smaller by their own Venus. software: false, so a stream Venus can't
+  # take is an error, not a slow picture.
   video: [
     decoders: [
       %{
@@ -226,9 +225,9 @@ config :home_base,
         name: "Venus",
         profiles: [:constrained_baseline, :baseline, :main, :high],
         max_level: 40,
-        max_size: {640, 480},
-        max_fps: 15,
-        max_bitrate: 300_000
+        max_size: {1920, 1080},
+        max_fps: 30,
+        max_bitrate: 4_000_000
       }
     ],
     software: false
