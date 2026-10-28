@@ -35,4 +35,21 @@ defmodule HelloWatch.Clock.CamerasAppTest do
     assert CamerasApp.tap(CamerasApp.new(), {227, 227}) == nil
     assert CamerasApp.tap(%{CamerasApp.new() | list: []}, {227, 227}) == nil
   end
+
+  test "a failure's reason reads short" do
+    assert CamerasApp.reason(:no_route) == "no route"
+    assert CamerasApp.reason({:timeout, {GenServer, :call, []}}) == "timeout"
+    assert String.length(CamerasApp.reason(%{some: "long map of details here"})) == 24
+  end
+
+  test "the views go from the list to a camera and back through Emerge" do
+    watching = %{cams(1) | showing: {@phone, "front"}}
+
+    [cams(1), watching, %{watching | status: {:frame, %{}}}, %{cams(1) | error: :timeout}]
+    |> Enum.map(&CamerasApp.render/1)
+    |> Enum.reduce(Emerge.Engine.diff_state_new(), fn tree, state ->
+      {_patches, state, _vnode} = Emerge.Engine.diff_state_update(state, tree)
+      state
+    end)
+  end
 end

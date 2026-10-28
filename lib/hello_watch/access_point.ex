@@ -99,6 +99,18 @@ defmodule HelloWatch.AccessPoint do
     )
   end
 
+  @doc """
+  Whether `stop/0` has a network to put wlan0 back on: the access point was
+  started from a configuration with one.
+  """
+  @spec returnable?() :: boolean()
+  def returnable? do
+    match?(
+      %{vintage_net_wifi: %{networks: [_ | _]}},
+      :persistent_term.get(@previous, nil)
+    )
+  end
+
   @doc "Brings the access point up in place of wlan0's usual network."
   @spec start() :: :ok | {:error, term()}
   def start do

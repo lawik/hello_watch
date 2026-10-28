@@ -671,7 +671,7 @@ defmodule HelloWatch.Clock do
       case CamerasApp.tap(state.cameras, at) do
         {:watch, camera} -> watch_camera(state, camera)
         :stop -> stop_camera(state)
-        {:index, index} -> put_in(state.cameras.index, index)
+        {:index, index} -> %{state | cameras: %{state.cameras | index: index, error: nil}}
         nil -> state
       end
 

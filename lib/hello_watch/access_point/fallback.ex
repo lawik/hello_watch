@@ -7,17 +7,21 @@ defmodule HelloWatch.AccessPoint.Fallback do
     * With no network configured on wlan0, the access point comes up as soon
       as wlan0 exists, and stays up.
     * With one configured but no connection for `@grace` (since boot, or since
-      it last tried), the access point comes up for `@window`, then wlan0 goes
-      back to its network for another `@grace`, and so on until it connects.
-      Away from home it's reachable either way; back home it rejoins.
+      it last tried), the access point comes up. Once nobody has been on it
+      for `@window`, wlan0 goes back to its network for another `@grace`, and
+      so on until it connects. Away from home it's reachable either way; back
+      home it rejoins.
 
-  Wi-Fi that's off (its rfkill soft block, from the sky's switch or a
-  suspend) isn't a failure, and an access point started by hand is left
-  alone. The passphrase is the access point's usual one, kept in
+  That goes for an access point started by hand from the Network app too:
+  what's left alone is one in use. Nothing here remembers who raised it, so
+  a restart of this process, or a stop that failed (tried again on the next
+  poll), can't leave the watch on its access point for good. Wi-Fi that's
+  off (its rfkill soft block, from the sky's switch or a suspend) isn't a
+  failure. The passphrase is the access point's usual one, kept in
   `/root/access_point_psk`: a phone that joined `watch-XXXX` once, from the
   Network app, joins again by itself.
 
-  `decide/3` makes every choice; the process only reads the state of wlan0
+  `decide/4` makes every choice; the process only reads the state of wlan0
   every `@poll` and acts on it.
   """
 
@@ -35,17 +39,25 @@ defmodule HelloWatch.AccessPoint.Fallback do
 
   @typedoc """
   What wlan0 is doing: `:absent` (no interface yet), `:blocked` (rfkill),
-  `:ap` (the access point is up), `:connected`, or `:trying` / `:unconfigured`
-  (client mode, with or without a network to join).
+  `:connected`, `:trying` / `:unconfigured` (client mode, with or without a
+  network to join), or the access point is up: `:ap_in_use` (someone's on
+  it), `:ap_idle`, or `:ap_only` (there's no network to go back to).
   """
-  @type wlan :: :absent | :blocked | :ap | :connected | :trying | :unconfigured
+  @type wlan ::
+          :absent
+          | :blocked
+          | :connected
+          | :trying
+          | :unconfigured
+          | :ap_in_use
+          | :ap_idle
+          | :ap_only
 
   @typedoc """
-  `since`: when the current attempt to connect began; `ours`: when the
-  fallback raised the access point, or nil; `stay`: whether it stays up, as
-  there was no network to go back to.
+  `since`: when the current attempt to connect began; `idle`: since when the
+  access point has had nobody on it, or nil.
   """
-  @type state :: %{since: integer(), ours: integer() | nil, stay: boolean()}
+  @type state :: %{since: integer(), idle: integer() | nil}
 
   @doc false
   def start_link(opts \\ []), do: GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -60,35 +72,33 @@ defmodule HelloWatch.AccessPoint.Fallback do
     window = Keyword.get(opts, :window, @window)
 
     case wlan do
-      # Nothing to fall back from: start the wait over. An access point seen
-      # after this was started by hand.
+      # Nothing to fall back from: start the wait over.
       w when w in [:absent, :blocked, :connected] ->
-        {:nothing, %{state | since: now, ours: nil, stay: false}}
+        {:nothing, %{state | since: now, idle: nil}}
 
       :unconfigured ->
-        {:start, %{state | ours: now, stay: true}}
+        {:start, %{state | idle: nil}}
 
       :trying when now - state.since >= grace ->
-        {:start, %{state | ours: now, stay: false}}
+        {:start, %{state | idle: nil}}
 
-      :trying ->
-        {:nothing, %{state | ours: nil, stay: false}}
+      w when w in [:trying, :ap_in_use, :ap_only] ->
+        {:nothing, %{state | idle: nil}}
 
-      # Up by hand, or with no network to go back to: leave it.
-      :ap when state.ours == nil or state.stay ->
-        {:nothing, state}
+      :ap_idle ->
+        idle = state.idle || now
 
-      :ap ->
-        if now - state.ours >= window,
-          do: {:stop, %{state | ours: nil, since: now}},
-          else: {:nothing, state}
+        # `idle` stays put, so a stop that failed is tried again next poll.
+        if now - idle >= window,
+          do: {:stop, %{state | since: now, idle: idle}},
+          else: {:nothing, %{state | idle: idle}}
     end
   end
 
   @impl GenServer
   def init(_opts) do
     send(self(), :poll)
-    {:ok, %{since: now(), ours: nil, stay: false}}
+    {:ok, %{since: now(), idle: nil}}
   end
 
   @impl GenServer
@@ -109,8 +119,10 @@ defmodule HelloWatch.AccessPoint.Fallback do
   end
 
   defp act(:stop, _wlan) do
-    Logger.info("Access point fallback timed out: trying Wi-Fi again")
-    AccessPoint.stop()
+    Logger.info("Nobody on the access point: trying Wi-Fi again")
+
+    with {:error, reason} <- AccessPoint.stop(),
+         do: Logger.warning("Access point fallback: #{inspect(reason)}")
   end
 
   defp act(:nothing, _wlan), do: :ok
@@ -129,7 +141,7 @@ defmodule HelloWatch.AccessPoint.Fallback do
         :absent
 
       %{vintage_net_wifi: %{networks: [%{mode: :ap} | _]}} ->
-        :ap
+        ap_state()
 
       %{vintage_net_wifi: %{networks: [_ | _]}} ->
         if apply(VintageNet, :get, [["interface", @interface, "connection"]]) in [:lan, :internet],
@@ -140,6 +152,16 @@ defmodule HelloWatch.AccessPoint.Fallback do
         if apply(VintageNet, :get, [["interface", @interface, "present"]]),
           do: :unconfigured,
           else: :absent
+    end
+  end
+
+  defp ap_state do
+    clients = apply(VintageNet, :get, [["interface", @interface, "wifi", "clients"]]) || []
+
+    cond do
+      not AccessPoint.returnable?() -> :ap_only
+      clients != [] -> :ap_in_use
+      true -> :ap_idle
     end
   end
 

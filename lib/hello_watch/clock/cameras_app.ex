@@ -42,10 +42,10 @@ defmodule HelloWatch.Clock.CamerasApp do
       [width(px(@size)), height(px(@size)), Background.color(color_rgb(0, 0, 0))] ++
         Enum.map(
           [
-            video(
-              [key(:camera), width(px(@size)), height(px(@size)), image_fit(:cover)],
-              @target
-            )
+            # No key: Emerge wants all or none of a host's nearby mounts
+            # keyed, and the video comes first, so it keeps its place as
+            # the status line goes.
+            video([width(px(@size)), height(px(@size)), image_fit(:cover)], @target)
           ] ++
             status_line(cams.status) ++
             Arc.rim(
@@ -65,16 +65,22 @@ defmodule HelloWatch.Clock.CamerasApp do
   # Until the first frame, a line says what's happening.
   defp status_line(nil) do
     [
-      el(
-        [
-          center_x(),
-          center_y(),
-          Font.family("Alegreya Sans"),
-          Font.size(30),
-          Font.color(Palette.c(:lilac))
-        ],
-        text("Connecting…")
-      )
+      column([center_x(), center_y(), spacing(10)], [
+        el(
+          [center_x(), Font.family("Alegreya Sans"), Font.size(34), Font.color(Palette.c(:bone))],
+          text("Connecting…")
+        ),
+        el(
+          [
+            center_x(),
+            Font.family("Alegreya Sans"),
+            Font.italic(),
+            Font.size(22),
+            Font.color(Palette.c(:lilac))
+          ],
+          text("tap to cancel")
+        )
+      ])
     ]
   end
 
@@ -140,12 +146,17 @@ defmodule HelloWatch.Clock.CamerasApp do
     )
   end
 
-  defp caption(%{error: error}) when error != nil, do: "Couldn't start it"
+  defp caption(%{error: error}) when error != nil, do: "Failed: #{reason(error)}"
 
   defp caption(%{list: [_ | _] = list} = cams),
     do: "#{index(cams) + 1} of #{length(list)} · tap to watch"
 
   defp caption(_cams), do: nil
+
+  @doc "A failure's reason, short enough for the rim."
+  def reason(reason) when is_atom(reason), do: reason |> to_string() |> String.replace("_", " ")
+  def reason({reason, _detail}) when is_atom(reason), do: reason(reason)
+  def reason(reason), do: reason |> inspect() |> String.slice(0, 24)
 
   # The list can shrink under the index between reads.
   defp index(%{list: list, index: index}), do: rem(index, Kernel.max(length(list), 1))
